@@ -46,6 +46,11 @@
 #include <limits.h>
 #include <errno.h>
 
+#include <sys/un.h>
+#include <sys/socket.h>
+#include <ctype.h>
+#include <unistd.h>
+
 #include "bluetooth.h"
 #include "hci.h"
 #include "hci_lib.h"
@@ -1893,6 +1898,7 @@ static struct option main_options[] = {
  * @param argv	args value
  * @return EXIT_FAILURE or EXIT_SUCCESS
  */
+#if 0
 int main(int argc, char *argv[])
 {
 	int opt;
@@ -2049,3 +2055,119 @@ int main(int argc, char *argv[])
 	return EXIT_SUCCESS;
 }
 
+#endif
+
+#define SERVER "/tmp/ud_bluetooth_main"
+#define CLIENT "/tmp/ud_bluetooth_client"
+
+#define BUF_SIZE 128
+
+static int sock_send_cmd(int sock, char *server_path, char *cmd, int cmd_len)
+{
+        struct sockaddr_un svaddr;
+        int len = sizeof(struct sockaddr_un);
+
+        memset(&svaddr, 0, sizeof(struct sockaddr_un));
+        svaddr.sun_family = AF_UNIX;
+        strncpy(svaddr.sun_path, server_path, sizeof(svaddr.sun_path) - 1);
+
+        if (sendto(sock, cmd, cmd_len, 0, (struct sockaddr *) &svaddr, len) != cmd_len)
+                printf("sendto");
+
+        return 0;
+}
+
+static int create_client_sock(char *name)
+{
+        struct sockaddr_un svaddr, claddr;
+        int sfd, j;
+        char path[128];
+
+        snprintf(path, sizeof(path),
+                 "%s.%ld", name, getpid());
+
+        if (remove(path) == -1 && errno != ENOENT)
+                printf("remove unix sock data path\n");
+
+        /* Create  socket; bind to unique pathname */
+        sfd = socket(AF_UNIX, SOCK_DGRAM, 0);
+        if (sfd == -1)
+                g_printerr("create unix socket fail\n");
+
+        memset(&claddr, 0, sizeof(struct sockaddr_un));
+        claddr.sun_family = AF_UNIX;
+        snprintf(claddr.sun_path, sizeof(claddr.sun_path),
+                 "%s", path);
+/*
+        if (bind(sfd, (struct sockaddr *) &claddr, sizeof(struct sockaddr_un)) == -1)
+                g_printerr("bind error\n");
+*/
+
+        return sfd;
+}
+
+int
+main(int argc, char *argv[])
+{
+        struct sockaddr_un svaddr, claddr;
+        int sfd, cfd;
+        ssize_t numBytes;
+        socklen_t len;
+        char buf[BUF_SIZE];
+
+        sfd = socket(AF_UNIX, SOCK_DGRAM, 0);       /* Create server socket */
+        if (sfd == -1)
+                printf("socket");
+
+        /* Construct well-known address and bind server socket to it */
+
+        /* For an explanation of the following check, see the erratum note for
+           page 1168 at http://www.man7.org/tlpi/errata/. */
+        if (remove(CLIENT) == -1 && errno != ENOENT)
+                printf("remove-%s error.\n", CLIENT);
+
+        memset(&svaddr, 0, sizeof(struct sockaddr_un));
+        svaddr.sun_family = AF_UNIX;
+        strncpy(svaddr.sun_path, CLIENT, sizeof(svaddr.sun_path) - 1);
+
+        if (bind(sfd, (struct sockaddr *) &svaddr, sizeof(struct sockaddr_un)) == -1)
+                printf("bind");
+
+        /* Receive messages, convert to uppercase, and return to client */
+        for (;;) {
+                len = sizeof(struct sockaddr_un);
+                numBytes = recvfrom(sfd, buf, BUF_SIZE, 0,
+                                    (struct sockaddr *) &claddr, &len);
+                if (numBytes == -1)
+                        printf("recvfrom");
+
+                /*
+                printf("Server received %ld bytes from %s : %s\n", (long) numBytes,
+                       claddr.sun_path, buf);
+                */
+                /* create child process */
+                pid_t pid = fork();
+                switch(pid) {
+                case -1:
+                        printf("Create process error %s\n", buf);
+                        break;
+                case 0:
+                        cfd = create_client_sock(CLIENT);
+                        printf("in child process %s\n", buf);
+                        break;
+                default:
+                        /* Do nothing */
+                        break;
+                }
+
+                /**/
+                /*
+                  for (j = 0; j < numBytes; j++)
+                  buf[j] = toupper((unsigned char) buf[j]);
+
+                  if (sendto(sfd, buf, numBytes, 0, (struct sockaddr *) &claddr, len) !=
+                  numBytes)
+                  fatal("sendto");
+                */
+    }
+}
