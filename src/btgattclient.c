@@ -1715,6 +1715,9 @@ static void cmd_help(struct client *cli, char *cmd_str)
  */
 static void prompt_read_cb(int fd, uint32_t events, void *user_data)
 {
+        ssize_t numBytes;
+        char buf[128];
+        struct sockaddr_un claddr;
 	ssize_t read;
 	size_t len = 0;
 	char *line = NULL;
@@ -1727,6 +1730,7 @@ static void prompt_read_cb(int fd, uint32_t events, void *user_data)
 		return;
 	}
 
+        /*
 	if ((read = getline(&line, &len, stdin)) == -1)
 		return;
 
@@ -1735,9 +1739,21 @@ static void prompt_read_cb(int fd, uint32_t events, void *user_data)
 		print_prompt();
 		return;
 	}
+        */
+        len = sizeof(struct sockaddr_un);
+        numBytes = recvfrom(fd, buf, 128, 0,
+                            (struct sockaddr *) &claddr, &len);
+        if (numBytes == -1)
+                printf("recvfrom");
 
-	line[read-1] = '\0';
-	args = line;
+        printf("[Client] received %ld bytes from %s\n", (long) numBytes,
+               claddr.sun_path);
+
+        printf("[Client] C-> S : %s\n", buf);
+
+
+	buf[numBytes] = '\0';
+	args = buf;
 
 	while ((cmd = strsep(&args, " \t")))
 		if (*cmd != '\0')
@@ -1757,7 +1773,7 @@ static void prompt_read_cb(int fd, uint32_t events, void *user_data)
 		fprintf(stderr, "Unknown command: %s\n", line);
 
 failed:
-	print_prompt();
+	//print_prompt();
 
 	free(line);
 }
@@ -2096,24 +2112,40 @@ static int create_client_sock(char *name)
 
         memset(&claddr, 0, sizeof(struct sockaddr_un));
         claddr.sun_family = AF_UNIX;
-        snprintf(claddr.sun_path, sizeof(claddr.sun_path),
+        snprintf(&claddr.sun_path[1], sizeof(claddr.sun_path)-2,
                  "%s", path);
-/*
+
         if (bind(sfd, (struct sockaddr *) &claddr, sizeof(struct sockaddr_un)) == -1)
                 g_printerr("bind error\n");
-*/
 
         return sfd;
+}
+
+static void child_handler(int sig)
+{
+        pid_t pid;
+        int status;
+
+        while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+                printf("Close PID %ld\n", pid);
+        }
 }
 
 int
 main(int argc, char *argv[])
 {
         struct sockaddr_un svaddr, claddr;
-        int sfd, cfd;
+        int sfd;
         ssize_t numBytes;
         socklen_t len;
-        char buf[BUF_SIZE];
+        char buf[BUF_SIZE] = {0};
+
+        struct sigaction sa;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        sa.sa_handler = child_handler;
+
+        sigaction(SIGCHLD, &sa, NULL);
 
         sfd = socket(AF_UNIX, SOCK_DGRAM, 0);       /* Create server socket */
         if (sfd == -1)
@@ -2135,11 +2167,16 @@ main(int argc, char *argv[])
 
         /* Receive messages, convert to uppercase, and return to client */
         for (;;) {
+        retry:
                 len = sizeof(struct sockaddr_un);
+                memset(buf, 0, BUF_SIZE);
                 numBytes = recvfrom(sfd, buf, BUF_SIZE, 0,
                                     (struct sockaddr *) &claddr, &len);
-                if (numBytes == -1)
-                        printf("recvfrom");
+                if (numBytes == -1) {
+                        printf("recvfrom error, will retry \n");
+                        usleep(500000);
+                        goto retry;
+                }
 
                 /*
                 printf("Server received %ld bytes from %s : %s\n", (long) numBytes,
@@ -2152,8 +2189,79 @@ main(int argc, char *argv[])
                         printf("Create process error %s\n", buf);
                         break;
                 case 0:
-                        cfd = create_client_sock(CLIENT);
-                        printf("in child process %s\n", buf);
+                {
+                        int cfd = create_client_sock(CLIENT);
+                        printf("in child process %s pid %ld\n", buf, getpid());
+                        char cmd[128] = {0};
+                        snprintf(cmd, 127, "%s PROCESS %ld\n", buf+8, getpid());
+                        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+                        {
+                                int sec = BT_SECURITY_LOW;
+                                uint16_t mtu = 0;
+                                uint8_t dst_type = BDADDR_LE_PUBLIC;
+                                bdaddr_t src_addr, dst_addr;
+                                int dev_id = -1;
+                                int fd;
+                                struct client *cli;
+
+                                char address[18] = {0};
+                                memcpy(address, buf+8, 17);
+                                if (str2ba(address, &dst_addr) < 0) {
+                                        fprintf(stderr, "Invalid remote address: %s\n",
+									address);
+                                        return EXIT_FAILURE;
+                                }
+
+
+                                bacpy(&src_addr, BDADDR_ANY);
+
+                                /* create the mainloop resources */
+                                mainloop_init();
+
+                                fd = l2cap_le_att_connect(&src_addr, &dst_addr, dst_type, sec);
+                                if (fd < 0) {
+                                        snprintf(cmd, 127, "%s DISCONN fail\n", buf+8);
+                                        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+                                        return EXIT_FAILURE;
+                                }
+
+                                cli = client_create(fd, mtu);
+                                if (!cli) {
+                                        close(fd);
+                                        snprintf(cmd, 127, "%s DISCONN fail\n", buf+8);
+                                        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+                                        return EXIT_FAILURE;
+                                }
+
+                                snprintf(cmd, 127, "%s CONNECT sucess\n", buf+8);
+                                sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+
+                                /* add input event from console */
+                                if (mainloop_add_fd(cfd,
+                                                    EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR,
+                                                    prompt_read_cb, cli, NULL) < 0) {
+                                        fprintf(stderr, "Failed to initialize client server\n");
+                                        return EXIT_FAILURE;
+                                }
+
+                                /* add handler for process interrupted (SIGINT) or terminated (SIGTERM)*/
+                                //mainloop_set_signal(&mask, signal_cb, NULL, NULL);
+
+
+                                /* epoll main loop call
+                                 *
+                                 * any further process is an epoll event processed in mainloop_run
+                                 *
+                                 */
+                                mainloop_run();
+
+                                printf("\n\nShutting down...\n");
+
+                                client_destroy(cli);
+
+                                return 0;
+                        }
+                }
                         break;
                 default:
                         /* Do nothing */
