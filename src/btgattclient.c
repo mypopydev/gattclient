@@ -2128,6 +2128,10 @@ static void child_handler(int sig)
 
         while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
                 printf("Close PID %ld\n", pid);
+                /* close the process */
+                char cmd[128] = {0};
+                snprintf(cmd, 127, "%s CLOSE %ld\n", buf+8, pid);
+                sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
         }
 }
 
@@ -2192,6 +2196,7 @@ main(int argc, char *argv[])
                 {
                         int cfd = create_client_sock(CLIENT);
                         printf("in child process %s pid %ld\n", buf, getpid());
+                        /* create process sucess */
                         char cmd[128] = {0};
                         snprintf(cmd, 127, "%s PROCESS %ld\n", buf+8, getpid());
                         sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
