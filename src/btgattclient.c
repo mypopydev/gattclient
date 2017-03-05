@@ -1519,6 +1519,9 @@ static void register_notify_usage(void)
  * @param length		length of vector value
  * @param user_data		not used
  */
+int j = 0;
+int start_header = 0;
+uint8_t data[5] = {0};
 static void notify_cb(uint16_t value_handle, const uint8_t *value,
 					uint16_t length, void *user_data)
 {
@@ -1536,7 +1539,31 @@ static void notify_cb(uint16_t value_handle, const uint8_t *value,
 	for (i = 0; i < length; i++)
 		printf("%02x ", value[i]);
 
-	PRLOG("\n");
+	//PRLOG("\n");
+        printf("\n");
+
+        if (value_handle = 0x35) {
+                for (i = 0; i < length; i++) {
+                        //printf("%02x %02x %02x %02x %02x\n", data[0], data[1], data[2], data[3], data[4]);
+                        if (value[i] == 0x80)  {/* find the start header */
+                                start_header = 1;
+                                j = 0;
+                                data[j++] = value[i];
+                        }
+                        if (start_header == 1 && j <= 4 && j > 0 && value[i] != 0x80) {
+                                data[j++] = value[i];
+                        }
+                        if (start_header == 1 && j == 5) {
+                                printf("%02x %02x %02x %02x %02x\n", data[0], data[1], data[2], data[3], data[4]);
+
+                                start_header = 0;
+                                j = 0;
+                                memset(data, 0, 5);
+                        }
+                        if (start_header == 0)
+                                continue;
+                }
+        }
 }
 
 /**
