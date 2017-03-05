@@ -2373,13 +2373,65 @@ main(int argc, char *argv[])
 				status = write(s, cmd2, 8); /* FIXME */
 				LOG ("Wrote %d bytes\n", status);
 
-				char buf[128];
+				uint8_t buf[128];
+                                uint8_t start;
+                                uint8_t cmd[4];
 				ssize_t len;
+                                int i;
 				do {
 					len = read(s, buf, 128);
-					LOG("read %d bytes\n", len);
+                                        if (len == 20) {
+                                                LOG("read %d bytes\n", len);
+                                                hexdump(buf, len);
+                                        } else if (len > 0){
+                                                hexdump(buf, len);
+                                        }
+					//LOG("read %d bytes\n", len);
+                                        //if (i)
+                                        /*
+                                        for (i = 0; i < len - 20; i++) {
+                                                if (buf[i] == 0xaa && bu[i+])
+                                        }
+                                        */
 					//hexdump(buf, len);
                                         /* FIXME: match the result */
+                                        /*
+                                        len = read(s, &start, 1);
+                                        if (len < 0) {
+                                                LOG("__LINE__ %d\n", __LINE__);
+                                                return;
+                                        }
+                                        if (start == 0xAA) {
+                                                len = read(s, cmd, 3);
+                                                if (len < 3) {
+                                                        LOG("__LINE__ %d\n", __LINE__);
+                                                        return;
+                                                }
+
+                                                if (cmd[2] == 0x0F) {
+                                                        len = read(s, cmd, 16);
+                                                        if (len < 16) {
+                                                                LOG("__LINE__ %d\n", __LINE__);
+                                                                return;
+                                                        }
+                                                        printf("len = 16");
+                                                        hexdump(cmd, 16);
+                                                }
+
+                                                if (cmd[2] == 0x03) {
+                                                        len = read(s, cmd, 4);
+                                                        if (len < 4) {
+                                                                LOG("__LINE__ %d\n", __LINE__);
+                                                                return;
+                                                        }
+                                                        hexdump(cmd, 4);
+                                                }
+                                        } else {
+                                                //LOG("%02x ", start);
+                                                printf("%02x \n", start);
+                                                continue;
+                                        }
+                                        */
 				} while (len > 0);
 				close(s);
 
@@ -2454,15 +2506,5 @@ main(int argc, char *argv[])
                         /* Do nothing */
                         break;
                 }
-
-                /**/
-                /*
-                  for (j = 0; j < numBytes; j++)
-                  buf[j] = toupper((unsigned char) buf[j]);
-
-                  if (sendto(sfd, buf, numBytes, 0, (struct sockaddr *) &claddr, len) !=
-                  numBytes)
-                  fatal("sendto");
-                */
-    }
+        }
 }
