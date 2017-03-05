@@ -121,6 +121,126 @@ struct client {
 	unsigned int reliable_session_id;
 };
 
+#define SERVER "/tmp/ud_bluetooth_main"
+#define CLIENT "/tmp/ud_bluetooth_client"
+
+#define BUF_SIZE 128
+char buf[BUF_SIZE] = {0};
+
+
+static int sock_send_cmd(int sock, char *server_path, char *cmd, int cmd_len)
+{
+        struct sockaddr_un svaddr;
+        int len = sizeof(struct sockaddr_un);
+
+        memset(&svaddr, 0, sizeof(struct sockaddr_un));
+        svaddr.sun_family = AF_UNIX;
+        strncpy(svaddr.sun_path, server_path, sizeof(svaddr.sun_path) - 1);
+
+        if (sendto(sock, cmd, cmd_len, 0, (struct sockaddr *) &svaddr, len) != cmd_len)
+                printf("sendto");
+
+        return 0;
+}
+
+static int create_client_sock(char *name)
+{
+        struct sockaddr_un claddr;
+        int sfd;
+        char path[128];
+
+        snprintf(path, sizeof(path),
+                 "%s.%d", name, getpid());
+
+        if (remove(path) == -1 && errno != ENOENT)
+                printf("remove unix sock data path\n");
+
+        /* Create  socket; bind to unique pathname */
+        sfd = socket(AF_UNIX, SOCK_DGRAM, 0);
+        if (sfd == -1)
+                printf("create unix socket fail\n");
+
+        memset(&claddr, 0, sizeof(struct sockaddr_un));
+        claddr.sun_family = AF_UNIX;
+        snprintf(&claddr.sun_path[1], sizeof(claddr.sun_path)-2,
+                 "%s", path);
+
+        if (bind(sfd, (struct sockaddr *) &claddr, sizeof(struct sockaddr_un)) == -1)
+                printf("bind error\n");
+
+        return sfd;
+}
+
+
+#define NELEMS(array) (sizeof(array) / sizeof(array[0]))
+
+#include <stdarg.h>
+#include <time.h>
+#include <sys/time.h>
+
+static void LOG(const char *fmt, ...)
+{
+	char date[20];
+	struct timeval tv;
+	va_list args;
+
+	/* print the timestamp */
+	gettimeofday(&tv, NULL);
+	strftime(date, NELEMS(date), "%Y-%m-%dT%H:%M:%S", localtime(&tv.tv_sec));
+	printf("[%s.%03dZ] ", date, (int)tv.tv_usec/1000);
+
+	/* printf like normal */
+	va_start(args, fmt);
+	vprintf(fmt, args);
+	va_end(args);
+}
+
+static void hexdump(void *buf, long size)
+{
+	char sz_buf[100];
+	long indent = 1;
+	long out_len, index, out_len2;
+	long rel_pos;
+	struct {
+		char *data;
+		unsigned long size;
+	} buff;
+	unsigned char *tmp,tmp_pos;
+	unsigned char *addr = (unsigned char *)buf;
+
+	buff.data = (char *)addr;
+	buff.size = size;
+
+	while (buff.size > 0) {
+		tmp      = (unsigned char *)buff.data;
+		out_len  = (int)buff.size;
+		if (out_len > 32)
+			out_len = 32;
+
+		/* create a 85-character formatted output line: */
+		sprintf(sz_buf, "                              "
+			"                              "
+			"              [%08lX]", tmp-addr);
+		out_len2 = out_len;
+
+		for (index=indent, rel_pos=0; out_len2; out_len2--,index += 2 ) {
+			tmp_pos = *tmp++;
+			sprintf(sz_buf + index, "%02X ", (unsigned short)tmp_pos);
+			if (!(++rel_pos & 3))     /* extra blank after 4 bytes */
+				index++;
+		}
+
+		if (!(rel_pos & 3)) index--;
+
+		sz_buf[index+1] = ' ';
+
+		printf("%s\n", sz_buf);
+
+		buff.data += out_len;
+		buff.size -= out_len;
+	}
+}
+
 /**
  * print prompt
  */
@@ -533,6 +653,12 @@ static void ready_cb(bool success, uint8_t att_ecode, void *user_data)
 
 	print_services(cli);
 	print_prompt();
+
+        char cmd[128] = {0};
+        int cfd = create_client_sock(CLIENT);
+        snprintf(cmd, 127, "%s CONNECT sucess\n", buf+8);
+        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+        close(cfd);
 }
 
 /**
@@ -1405,7 +1531,7 @@ static void notify_cb(uint16_t value_handle, const uint8_t *value,
 		return;
 	}
 
-	printf("(%u bytes): ", length);
+	printf("buf %s (%u bytes): ", buf, length);
 
 	for (i = 0; i < length; i++)
 		printf("%02x ", value[i]);
@@ -2098,54 +2224,6 @@ int main(int argc, char *argv[])
 
 #endif
 
-#define SERVER "/tmp/ud_bluetooth_main"
-#define CLIENT "/tmp/ud_bluetooth_client"
-
-#define BUF_SIZE 128
-char buf[BUF_SIZE] = {0};
-
-static int sock_send_cmd(int sock, char *server_path, char *cmd, int cmd_len)
-{
-        struct sockaddr_un svaddr;
-        int len = sizeof(struct sockaddr_un);
-
-        memset(&svaddr, 0, sizeof(struct sockaddr_un));
-        svaddr.sun_family = AF_UNIX;
-        strncpy(svaddr.sun_path, server_path, sizeof(svaddr.sun_path) - 1);
-
-        if (sendto(sock, cmd, cmd_len, 0, (struct sockaddr *) &svaddr, len) != cmd_len)
-                printf("sendto");
-
-        return 0;
-}
-
-static int create_client_sock(char *name)
-{
-        struct sockaddr_un claddr;
-        int sfd;
-        char path[128];
-
-        snprintf(path, sizeof(path),
-                 "%s.%d", name, getpid());
-
-        if (remove(path) == -1 && errno != ENOENT)
-                printf("remove unix sock data path\n");
-
-        /* Create  socket; bind to unique pathname */
-        sfd = socket(AF_UNIX, SOCK_DGRAM, 0);
-        if (sfd == -1)
-                printf("create unix socket fail\n");
-
-        memset(&claddr, 0, sizeof(struct sockaddr_un));
-        claddr.sun_family = AF_UNIX;
-        snprintf(&claddr.sun_path[1], sizeof(claddr.sun_path)-2,
-                 "%s", path);
-
-        if (bind(sfd, (struct sockaddr *) &claddr, sizeof(struct sockaddr_un)) == -1)
-                printf("bind error\n");
-
-        return sfd;
-}
 
 static void child_handler(int sig)
 {
@@ -2234,9 +2312,11 @@ main(int argc, char *argv[])
                         int cfd = create_client_sock(CLIENT);
                         /* create process sucess */
                         printf("in child process %s pid %d\n", buf, getpid());
+
                         char cmd[128] = {0};
                         snprintf(cmd, 127, "%s PROCESS %d\n", buf+8, getpid());
                         sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+
                         if (strstr(buf, "type")) {
                                 struct sockaddr_rc loc_addr = { 0 };
                                 char address[18] = {0};
@@ -2260,6 +2340,22 @@ main(int argc, char *argv[])
                                         sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
                                         return EXIT_FAILURE;
                                 }
+
+                                status = write(s, cmd1, 8); /* FIXME */
+				usleep(100);
+				status = write(s, cmd2, 8); /* FIXME */
+				LOG ("Wrote %d bytes\n", status);
+
+				char buf[128];
+				ssize_t len;
+				do {
+					len = read(s, buf, 128);
+					LOG("read %d bytes\n", len);
+					//hexdump(buf, len);
+                                        /* FIXME: match the result */
+				} while (len > 0);
+				close(s);
+
                         } else {
                                 int sec = BT_SECURITY_LOW;
                                 uint16_t mtu = 0;
@@ -2267,7 +2363,6 @@ main(int argc, char *argv[])
                                 bdaddr_t src_addr, dst_addr;
                                 int fd;
                                 struct client *cli;
-
                                 char address[18] = {0};
                                 memcpy(address, buf+8, 17);
                                 if (str2ba(address, &dst_addr) < 0) {
@@ -2276,7 +2371,6 @@ main(int argc, char *argv[])
                                         return EXIT_FAILURE;
                                 }
 
-
                                 bacpy(&src_addr, BDADDR_ANY);
 
                                 /* create the mainloop resources */
@@ -2284,7 +2378,7 @@ main(int argc, char *argv[])
 
                                 fd = l2cap_le_att_connect(&src_addr, &dst_addr, dst_type, sec);
                                 if (fd < 0) {
-                                        snprintf(cmd, 127, "%s DISCONN fail\n", buf+8);
+                                        snprintf(cmd, 127, "%s DISCONN fail >>>>>>>> \n", buf+8);
                                         sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
                                         return EXIT_FAILURE;
                                 }
@@ -2292,13 +2386,15 @@ main(int argc, char *argv[])
                                 cli = client_create(fd, mtu);
                                 if (!cli) {
                                         close(fd);
-                                        snprintf(cmd, 127, "%s DISCONN fail\n", buf+8);
+                                        snprintf(cmd, 127, "%s DISCONN fail ========= \n", buf+8);
                                         sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
                                         return EXIT_FAILURE;
                                 }
 
+                                /*
                                 snprintf(cmd, 127, "%s CONNECT sucess\n", buf+8);
                                 sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+                                */
 
                                 /* add input event from console */
                                 if (mainloop_add_fd(cfd,
