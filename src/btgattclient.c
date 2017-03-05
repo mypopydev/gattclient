@@ -46,6 +46,9 @@
 #include <limits.h>
 #include <errno.h>
 
+#include <sys/types.h>
+#include <sys/wait.h>
+
 #include <sys/un.h>
 #include <sys/socket.h>
 #include <ctype.h>
@@ -63,6 +66,28 @@
 #include "queue.h"
 #include "gatt-db.h"
 #include "gatt-client.h"
+
+/*
+#include <stdio.h>
+#include <errno.h>
+#include <ctype.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <getopt.h>
+#include <signal.h>
+#include <sys/param.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+*/
+
+#include <bluetooth/bluetooth.h>
+#include <bluetooth/hci.h>
+#include <bluetooth/hci_lib.h>
+#include <bluetooth/sdp.h>
+#include <bluetooth/sdp_lib.h>
+#include <bluetooth/rfcomm.h>
 
 #define ATT_CID 4
 
@@ -1718,8 +1743,8 @@ static void prompt_read_cb(int fd, uint32_t events, void *user_data)
         ssize_t numBytes;
         char buf[128];
         struct sockaddr_un claddr;
-	ssize_t read;
-	size_t len = 0;
+	//ssize_t read;
+	socklen_t len = 0;
 	char *line = NULL;
 	char *cmd = NULL, *args;
 	struct client *cli = user_data;
@@ -2077,6 +2102,7 @@ int main(int argc, char *argv[])
 #define CLIENT "/tmp/ud_bluetooth_client"
 
 #define BUF_SIZE 128
+char buf[BUF_SIZE] = {0};
 
 static int sock_send_cmd(int sock, char *server_path, char *cmd, int cmd_len)
 {
@@ -2095,12 +2121,12 @@ static int sock_send_cmd(int sock, char *server_path, char *cmd, int cmd_len)
 
 static int create_client_sock(char *name)
 {
-        struct sockaddr_un svaddr, claddr;
-        int sfd, j;
+        struct sockaddr_un claddr;
+        int sfd;
         char path[128];
 
         snprintf(path, sizeof(path),
-                 "%s.%ld", name, getpid());
+                 "%s.%d", name, getpid());
 
         if (remove(path) == -1 && errno != ENOENT)
                 printf("remove unix sock data path\n");
@@ -2108,7 +2134,7 @@ static int create_client_sock(char *name)
         /* Create  socket; bind to unique pathname */
         sfd = socket(AF_UNIX, SOCK_DGRAM, 0);
         if (sfd == -1)
-                g_printerr("create unix socket fail\n");
+                printf("create unix socket fail\n");
 
         memset(&claddr, 0, sizeof(struct sockaddr_un));
         claddr.sun_family = AF_UNIX;
@@ -2116,7 +2142,7 @@ static int create_client_sock(char *name)
                  "%s", path);
 
         if (bind(sfd, (struct sockaddr *) &claddr, sizeof(struct sockaddr_un)) == -1)
-                g_printerr("bind error\n");
+                printf("bind error\n");
 
         return sfd;
 }
@@ -2127,13 +2153,25 @@ static void child_handler(int sig)
         int status;
 
         while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-                printf("Close PID %ld\n", pid);
                 /* close the process */
                 char cmd[128] = {0};
-                snprintf(cmd, 127, "%s CLOSE %ld\n", buf+8, pid);
+                /*
+                snprintf(cmd, 127, "%s CLOSEID %d\n", buf+8, pid);
+                int cfd = create_client_sock(CLIENT);
                 sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+                printf("Close PID %d\n", pid);
+                close(cfd);
+                */
+                snprintf(cmd, 127, "CLOSEID %d\n", pid);
+                int cfd = create_client_sock(CLIENT);
+                sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+                printf("Close PID %d\n", pid);
+                close(cfd);
         }
 }
+
+char cmd1[] = {0xcc, 0x96, 0x02, 0x03, 0x01, 0x01, 0x00, 0x01};
+char cmd2[] = {0xcc, 0x96, 0x02, 0x03, 0x01, 0x02, 0x00, 0x02};
 
 int
 main(int argc, char *argv[])
@@ -2142,7 +2180,6 @@ main(int argc, char *argv[])
         int sfd;
         ssize_t numBytes;
         socklen_t len;
-        char buf[BUF_SIZE] = {0};
 
         struct sigaction sa;
         sigemptyset(&sa.sa_mask);
@@ -2195,17 +2232,39 @@ main(int argc, char *argv[])
                 case 0:
                 {
                         int cfd = create_client_sock(CLIENT);
-                        printf("in child process %s pid %ld\n", buf, getpid());
                         /* create process sucess */
+                        printf("in child process %s pid %d\n", buf, getpid());
                         char cmd[128] = {0};
-                        snprintf(cmd, 127, "%s PROCESS %ld\n", buf+8, getpid());
+                        snprintf(cmd, 127, "%s PROCESS %d\n", buf+8, getpid());
                         sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
-                        {
+                        if (strstr(buf, "type")) {
+                                struct sockaddr_rc loc_addr = { 0 };
+                                char address[18] = {0};
+                                bdaddr_t dst_addr;
+                                int s;
+                                int status;
+                                memcpy(address, buf+8, 17);
+                                if (str2ba(address, &dst_addr) < 0) {
+                                        fprintf(stderr, "Invalid remote address: %s\n",
+                                                address);
+                                        return EXIT_FAILURE;
+                                }
+                                s = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
+                                loc_addr.rc_family = AF_BLUETOOTH;
+                                loc_addr.rc_channel = 6;
+				//loc_addr.rc_bdaddr = *(&(info+i)->bdaddr);
+                                bacpy(&loc_addr.rc_bdaddr, &dst_addr);
+				status = connect(s, (struct sockaddr *)&loc_addr, sizeof(loc_addr));
+				if (status < 0) {
+                                        snprintf(cmd, 127, "%s DISCONN fail\n", buf+8);
+                                        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+                                        return EXIT_FAILURE;
+                                }
+                        } else {
                                 int sec = BT_SECURITY_LOW;
                                 uint16_t mtu = 0;
                                 uint8_t dst_type = BDADDR_LE_PUBLIC;
                                 bdaddr_t src_addr, dst_addr;
-                                int dev_id = -1;
                                 int fd;
                                 struct client *cli;
 
