@@ -1542,7 +1542,7 @@ static void notify_cb(uint16_t value_handle, const uint8_t *value,
 	//PRLOG("\n");
         printf("\n");
 
-        if (value_handle = 0x35) {
+        if (value_handle == 0x35) {
                 for (i = 0; i < length; i++) {
                         //printf("%02x %02x %02x %02x %02x\n", data[0], data[1], data[2], data[3], data[4]);
                         if (value[i] == 0x80)  {/* find the start header */
@@ -2374,10 +2374,7 @@ main(int argc, char *argv[])
 				LOG ("Wrote %d bytes\n", status);
 
 				uint8_t buf[128];
-                                uint8_t start;
-                                uint8_t cmd[4];
 				ssize_t len;
-                                int i;
 				do {
 					len = read(s, buf, 128);
                                         if (len == 20) {
