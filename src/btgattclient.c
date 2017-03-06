@@ -1556,6 +1556,13 @@ static void notify_cb(uint16_t value_handle, const uint8_t *value,
                         if (start_header == 1 && j == 5) {
                                 printf("%02x %02x %02x %02x %02x\n", data[0], data[1], data[2], data[3], data[4]);
 
+                                uint8_t value[128] =  {0};
+                                int cfd = create_client_sock(CLIENT);
+                                snprintf(value, 127, "%s DATA %d:%d\n",
+                                         buf+8, data[3], data[4]);
+                                sock_send_cmd(cfd, SERVER, value, strlen(value));
+                                close(cfd);
+
                                 start_header = 0;
                                 j = 0;
                                 memset(data, 0, 5);
@@ -2352,8 +2359,7 @@ main(int argc, char *argv[])
                                 int status;
                                 memcpy(address, buf+8, 17);
                                 if (str2ba(address, &dst_addr) < 0) {
-                                        fprintf(stderr, "Invalid remote address: %s\n",
-                                                address);
+                                        fprintf(stderr, "Invalid remote address: %s\n", address);
                                         return EXIT_FAILURE;
                                 }
                                 s = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
@@ -2368,10 +2374,10 @@ main(int argc, char *argv[])
                                         return EXIT_FAILURE;
                                 }
 
-                                status = write(s, cmd1, 8); /* FIXME */
+                                status = write(s, cmd1, 8);
 				usleep(100);
-				status = write(s, cmd2, 8); /* FIXME */
-				LOG ("Wrote %d bytes\n", status);
+				status = write(s, cmd2, 8);
+				LOG ("Wrote %d bytes [CMD to RPB]\n", status);
 
 				uint8_t buf[128];
 				ssize_t len;
@@ -2380,6 +2386,24 @@ main(int argc, char *argv[])
                                         if (len == 20) {
                                                 LOG("read %d bytes\n", len);
                                                 hexdump(buf, len);
+                                                /*
+                                                                                                 Sys  Dia  Pulse
+                                                  AA96020F 0106000E 01010101 0100A600 75004F99   22.1 15.6 79
+                                                  AA96020F 0106000E 01010101 0100A700 82005474   22.2 17.3 84
+                                                  AA96020F 0106000E 01010101 0100A300 72005084   21.7 15.2 80
+                                                  AA96020F 0106000E 01010101 0100AD00 9100566F   23.0 19.3 86
+                                                  AA960203 01070205                              ERROR
+
+                                                  Pulse buf[18] Sys buf[14]                 Dia buf[16]
+                                                  4F => 79     A6(166) => x 4 / 30  = 22.1  75(117) => x 2 / 15 = 15.6
+                                                  54 => 84     A7(167) => x 4 / 30  = 22.2  82(130) => x 2 / 15 = 17.3
+                                                  50 => 80     A3(163) => x 4 / 30  = 21.7  72(114) => x 2 / 15 = 15.2
+                                                  56 => 86     AD(173) => x 4 / 30  = 23.0  91(145) => x 2 / 15 = 19.3
+                                                */
+                                                uint8_t data[128] =  {0};
+                                                snprintf(data, 127, "%s DATA %d;%f;%f\n",
+                                                         address, buf[18], (buf[14] * 4)/30.0, (buf[16] * 2)/15.0);
+                                                sock_send_cmd(cfd, SERVER, data, strlen(data));
                                         } else if (len > 0){
                                                 hexdump(buf, len);
                                         }
