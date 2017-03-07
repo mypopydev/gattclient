@@ -166,7 +166,7 @@ static int create_client_sock(char *name)
                  "%s", path);
 
         if (bind(sfd, (struct sockaddr *) &claddr, sizeof(struct sockaddr_un)) == -1)
-                printf("bind error\n");
+            printf("bind error %s\n", name);
 
         return sfd;
 }
@@ -1522,6 +1522,7 @@ static void register_notify_usage(void)
 int j = 0;
 int start_header = 0;
 uint8_t data[5] = {0};
+uint8_t last_data[5] = {0};
 static void notify_cb(uint16_t value_handle, const uint8_t *value,
 					uint16_t length, void *user_data)
 {
@@ -1554,17 +1555,21 @@ static void notify_cb(uint16_t value_handle, const uint8_t *value,
                                 data[j++] = value[i];
                         }
                         if (start_header == 1 && j == 5) {
-                                printf("%02x %02x %02x %02x %02x\n", data[0], data[1], data[2], data[3], data[4]);
+                                printf(" data      %02x %02x %02x %02x %02x\n", data[0], data[1], data[2], data[3], data[4]);
+                                printf(" last data %02x %02x %02x %02x %02x\n", last_data[0], last_data[1], last_data[2], last_data[3], last_data[4]);
 
-                                uint8_t value[128] =  {0};
-                                int cfd = create_client_sock(CLIENT);
-                                snprintf(value, 127, "%s DATA %d:%d\n",
-                                         buf+8, data[3], data[4]);
-                                sock_send_cmd(cfd, SERVER, value, strlen(value));
-                                close(cfd);
+                                if (memcmp(last_data+3, data+3, 2) != 0) {
+                                        uint8_t value[128] =  {0};
+                                        int cfd = create_client_sock(CLIENT);
+                                        snprintf(value, 127, "%s DATA %d;%d\n",
+                                                 buf+8, data[3], data[4]);
+                                        sock_send_cmd(cfd, SERVER, value, strlen(value));
+                                        close(cfd);
+                                }
 
                                 start_header = 0;
                                 j = 0;
+                                memcpy(last_data, data, 5);
                                 memset(data, 0, 5);
                         }
                         if (start_header == 0)
