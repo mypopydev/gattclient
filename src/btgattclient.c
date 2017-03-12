@@ -1523,6 +1523,10 @@ int j = 0;
 int start_header = 0;
 uint8_t data[5] = {0};
 uint8_t last_data[5] = {0};
+
+int k = 0;
+int start_header1 = 0;
+uint8_t data1[17] = {0};
 static void notify_cb(uint16_t value_handle, const uint8_t *value,
 					uint16_t length, void *user_data)
 {
@@ -1573,6 +1577,32 @@ static void notify_cb(uint16_t value_handle, const uint8_t *value,
                                 memset(data, 0, 5);
                         }
                         if (start_header == 0)
+                                continue;
+                }
+        } else if (value_handle == 0x13) {
+                  for (i = 0; i < length; i++) {
+                        if (value[i] == 0x03)  {/* find the start header */
+                                start_header1 = 1;
+                                k = 0;
+                                data1[k++] = value[i];
+                        }
+                        if (start_header1 == 1 && k <= 16 && k > 0 && value[i] != 0x03) {
+                                data[k++] = value[i];
+                        }
+                        if (start_header1 == 1 && k == 17) {
+                                printf(" data      %02x %02x %02x %02x %02x %02x %02x\n", data1[0], data1[1], data1[2], data1[3], data1[4], data1[12], data1[13]);
+                                uint8_t value[128] =  {0};
+                                int cfd = create_client_sock(CLIENT);
+                                snprintf(value, 127, "%s DATA %d;%d\n",
+                                         buf+8, data1[12], data1[13]);
+                                sock_send_cmd(cfd, SERVER, value, strlen(value));
+                                close(cfd);
+
+                                start_header1 = 0;
+                                k = 0;
+                                memset(data1, 0, 17);
+                        }
+                        if (start_header1 == 0)
                                 continue;
                 }
         }
