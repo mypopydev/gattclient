@@ -67,21 +67,6 @@
 #include "gatt-db.h"
 #include "gatt-client.h"
 
-/*
-#include <stdio.h>
-#include <errno.h>
-#include <ctype.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
-#include <getopt.h>
-#include <signal.h>
-#include <sys/param.h>
-#include <sys/ioctl.h>
-#include <sys/socket.h>
-*/
-
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/hci.h>
 #include <bluetooth/hci_lib.h>
@@ -2312,7 +2297,7 @@ static void child_handler(int sig)
                 snprintf(cmd, 127, "CLOSEID %d\n", pid);
                 int cfd = create_client_sock(CLIENT);
                 sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
-                printf("Close PID %d\n", pid);
+                LOG("Close PID %d\n", pid);
                 close(cfd);
         }
 }
@@ -2436,60 +2421,19 @@ main(int argc, char *argv[])
                                                   56 => 86     AD(173) => x 4 / 30  = 23.0  91(145) => x 2 / 15 = 19.3
                                                 */
                                                 uint8_t data[128] =  {0};
-                                                snprintf(data, 127, "%s DATA %d;%f;%f\n",
+                                                snprintf(data, 127, "%s DATA %d;%.1f;%.1f\n",
                                                          address, buf[18], (buf[14] * 4)/30.0, (buf[16] * 2)/15.0);
                                                 sock_send_cmd(cfd, SERVER, data, strlen(data));
+                                                sleep(60);
+                                                close(s);
+                                                return;
                                         } else if (len > 0){
                                                 hexdump(buf, len);
                                         }
-					//LOG("read %d bytes\n", len);
-                                        //if (i)
-                                        /*
-                                        for (i = 0; i < len - 20; i++) {
-                                                if (buf[i] == 0xaa && bu[i+])
-                                        }
-                                        */
-					//hexdump(buf, len);
-                                        /* FIXME: match the result */
-                                        /*
-                                        len = read(s, &start, 1);
-                                        if (len < 0) {
-                                                LOG("__LINE__ %d\n", __LINE__);
-                                                return;
-                                        }
-                                        if (start == 0xAA) {
-                                                len = read(s, cmd, 3);
-                                                if (len < 3) {
-                                                        LOG("__LINE__ %d\n", __LINE__);
-                                                        return;
-                                                }
-
-                                                if (cmd[2] == 0x0F) {
-                                                        len = read(s, cmd, 16);
-                                                        if (len < 16) {
-                                                                LOG("__LINE__ %d\n", __LINE__);
-                                                                return;
-                                                        }
-                                                        printf("len = 16");
-                                                        hexdump(cmd, 16);
-                                                }
-
-                                                if (cmd[2] == 0x03) {
-                                                        len = read(s, cmd, 4);
-                                                        if (len < 4) {
-                                                                LOG("__LINE__ %d\n", __LINE__);
-                                                                return;
-                                                        }
-                                                        hexdump(cmd, 4);
-                                                }
-                                        } else {
-                                                //LOG("%02x ", start);
-                                                printf("%02x \n", start);
-                                                continue;
-                                        }
-                                        */
 				} while (len > 0);
-				close(s);
+                                sleep(60);
+                                close(s);
+                                return;
 
                         } else {
                                 int sec = BT_SECURITY_LOW;
