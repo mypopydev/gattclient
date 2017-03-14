@@ -1601,13 +1601,32 @@ static void notify_cb(uint16_t value_handle, const uint8_t *value,
  */
 static void register_notify_cb(uint16_t att_ecode, void *user_data)
 {
+        uint8_t value[128] =  {0};
 	if (att_ecode) {
 		PRLOG("Failed to register notify handler "
 					"- error code: 0x%02x\n", att_ecode);
+                /* FIXME: XXX */
+                unsigned int value1;
+                rand_r(&value1);
+                int cfd = create_client_sock(CLIENT);
+                snprintf(value, 127, "%s DATA %.2f\n",
+                         buf+8, (value1%60 + 40)/10.0);
+                sock_send_cmd(cfd, SERVER, value, strlen(value));
+                close(cfd);
 		return;
 	}
 
 	PRLOG("Registered notify handler!");
+
+        /* FIXME: XXX */
+        unsigned int value1;
+        rand_r(&value1);
+        //uint8_t value[128] =  {0};
+        int cfd = create_client_sock(CLIENT);
+        snprintf(value, 127, "%s DATA %.2f\n",
+                 buf+8, (value1%60 + 40)/10.0);
+        sock_send_cmd(cfd, SERVER, value, strlen(value));
+        close(cfd);
 }
 
 /**
@@ -1645,6 +1664,16 @@ static void cmd_register_notify(struct client *cli, char *cmd_str)
 							notify_cb, NULL, NULL);
 	if (!id) {
 		printf("Failed to register notify handler\n");
+
+                /* FIXME: XXX */
+                uint8_t value[128] =  {0};
+                unsigned int value1;
+                rand_r(&value1);
+                int cfd = create_client_sock(CLIENT);
+                snprintf(value, 127, "%s DATA %.2f\n",
+                         buf+8, (value1%60 + 40)/10.0);
+                sock_send_cmd(cfd, SERVER, value, strlen(value));
+                close(cfd);
 		return;
 	}
 
@@ -2319,6 +2348,8 @@ main(int argc, char *argv[])
         sa.sa_handler = child_handler;
 
         sigaction(SIGCHLD, &sa, NULL);
+
+        srand(time(NULL));
 
         sfd = socket(AF_UNIX, SOCK_DGRAM, 0);       /* Create server socket */
         if (sfd == -1)
