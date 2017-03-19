@@ -519,25 +519,25 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 	}
 
 	/* print source and destination IP addresses */
-	printf("       From: %s\n", inet_ntoa(ip->ip_src));
-	printf("         To: %s\n", inet_ntoa(ip->ip_dst));
+	printf("From: %s -> ", inet_ntoa(ip->ip_src));
+	printf("To: %s ", inet_ntoa(ip->ip_dst));
 
 	/* determine protocol */
 	switch(ip->ip_p) {
 		case IPPROTO_TCP:
-			printf("   Protocol: TCP\n");
+			printf(" Protocol: TCP");
 			break;
 		case IPPROTO_UDP:
-			printf("   Protocol: UDP\n");
+			printf(" Protocol: UDP");
 			return;
 		case IPPROTO_ICMP:
-			printf("   Protocol: ICMP\n");
+			printf(" Protocol: ICMP");
 			return;
 		case IPPROTO_IP:
-			printf("   Protocol: IP\n");
+			printf(" Protocol: IP");
 			return;
 		default:
-			printf("   Protocol: unknown\n");
+			printf(" Protocol: unknown");
 			return;
 	}
 
@@ -553,8 +553,8 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 		return;
 	}
 
-	printf("   Src port: %d\n", ntohs(tcp->th_sport));
-	printf("   Dst port: %d\n", ntohs(tcp->th_dport));
+	printf("Src port: %d ", ntohs(tcp->th_sport));
+	printf("Dst port: %d\n", ntohs(tcp->th_dport));
 
 	/* define/compute tcp payload (segment) offset */
 	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
@@ -683,7 +683,7 @@ int sniffer(char *devname)
 	bpf_u_int32 net;			/* ip */
 	int num_packets = 10;			/* number of packets to capture */
 
-	print_app_banner();
+	//print_app_banner();
 
 	/* check for capture device name on command-line */
 	if (devname) {
@@ -2992,7 +2992,8 @@ main(int argc, char *argv[])
                                 return;
 
                         } else if (strstr(buf, "sniffer")) {
-                                sniffer("wlan0");
+                                sniffer(argv[1]);
+                                //sniffer("wlp1s0");
                         } else {
                                 int sec = BT_SECURITY_LOW;
                                 uint16_t mtu = 0;
