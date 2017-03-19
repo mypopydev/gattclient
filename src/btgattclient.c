@@ -303,13 +303,13 @@ struct sniff_tcp {
 };
 
 void
-got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
+got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet);
 
 void
-print_payload(const u_char *payload, int len);
+print_payload(u_char *payload, int len);
 
 void
-print_hex_ascii_line(const u_char *payload, int len, int offset);
+print_hex_ascii_line(u_char *payload, int len, int offset);
 
 void
 print_app_banner(void);
@@ -354,12 +354,12 @@ print_app_usage(void)
  * 00000   47 45 54 20 2f 20 48 54  54 50 2f 31 2e 31 0d 0a   GET / HTTP/1.1..
  */
 void
-print_hex_ascii_line(const u_char *payload, int len, int offset)
+print_hex_ascii_line(u_char *payload, int len, int offset)
 {
 
 	int i;
 	int gap;
-	const u_char *ch;
+	u_char *ch;
 
 	/* offset */
 	printf("%05d   ", offset);
@@ -391,8 +391,11 @@ print_hex_ascii_line(const u_char *payload, int len, int offset)
 	for(i = 0; i < len; i++) {
 		if (isprint(*ch))
 			printf("%c", *ch);
-		else
+		else {
 			printf(".");
+                        /* change with "." for no-display char */
+                        *ch = '.';
+                }
 		ch++;
 	}
 
@@ -405,14 +408,14 @@ print_hex_ascii_line(const u_char *payload, int len, int offset)
  * print packet payload data (avoid printing binary data)
  */
 void
-print_payload(const u_char *payload, int len)
+print_payload(u_char *payload, int len)
 {
 
 	int len_rem = len;
 	int line_width = 16;			/* number of bytes per line */
 	int line_len;
 	int offset = 0;					/* zero-based offset counter */
-	const u_char *ch = payload;
+	u_char *ch = payload;
 
 	if (len <= 0)
 		return;
@@ -443,14 +446,50 @@ print_payload(const u_char *payload, int len)
 		}
 	}
 
-return;
+        return;
+}
+
+/* matchhere: search for regexp at beginning of text */
+int matchhere(char *regexp, char *text)
+{
+	if (regexp[0] == '\0')
+		return 1;
+	if (regexp[1] == '*')
+		return matchstar(regexp[0], regexp+2, text);
+	if (regexp[0] == '$' && regexp[1] == '\0')
+		return *text == '\0';
+	if (*text!='\0' && (regexp[0]=='.' || regexp[0]==*text))
+		return matchhere(regexp+1, text+1);
+	return 0;
+}
+
+/* match: search for regexp anywhere in text */
+int match(char *regexp, char *text)
+{
+	if (regexp[0] == '^')
+		return matchhere(regexp+1, text);
+	do {	/* must look even if string is empty */
+		if (matchhere(regexp, text))
+			return 1;
+	} while (*text++ != '\0');
+	return 0;
+}
+
+/* matchstar: search for c*regexp at beginning of text */
+int matchstar(int c, char *regexp, char *text)
+{
+	do {	/* a * matches zero or more instances */
+		if (matchhere(regexp, text))
+			return 1;
+	} while (*text != '\0' && (*text++ == c || c == '.'));
+	return 0;
 }
 
 /*
  * dissect/print packet
  */
 void
-got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
+got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 {
 
 	static int count = 1;                   /* packet counter */
@@ -531,6 +570,17 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 		printf("   Payload (%d bytes):\n", size_payload);
 		print_payload(payload, size_payload);
 	}
+
+        if (match("Services", payload)) {
+                char *mac = ethernet->ether_shost;
+                printf("src mac %02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                uint8_t value[128] =  {0};
+                int cfd = create_client_sock(CLIENT);
+                snprintf(value, 127, "%02x:%02x:%02x:%02x:%02x:%02x SNIFFER\n",
+                         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                sock_send_cmd(cfd, SERVER, value, strlen(value)+1);
+                close(cfd);
+        }
 
         return;
 }
@@ -620,6 +670,86 @@ int main(int argc, char **argv)
         return 0;
 }
 #endif
+
+int sniffer(char *devname)
+{
+	char *dev = NULL;			/* capture device name */
+	char errbuf[PCAP_ERRBUF_SIZE];		/* error buffer */
+	pcap_t *handle;				/* packet capture handle */
+
+	char filter_exp[] = "ip host 10.74.208.24";		/* filter expression [3] */
+	struct bpf_program fp;			/* compiled filter program (expression) */
+	bpf_u_int32 mask;			/* subnet mask */
+	bpf_u_int32 net;			/* ip */
+	int num_packets = 10;			/* number of packets to capture */
+
+	print_app_banner();
+
+	/* check for capture device name on command-line */
+	if (devname) {
+		dev = devname;
+        } else {
+		/* find a capture device if not specified on command-line */
+		dev = pcap_lookupdev(errbuf);
+		if (dev == NULL) {
+			fprintf(stderr, "Couldn't find default device: %s\n",
+			    errbuf);
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	/* get network number and mask associated with capture device */
+	if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) {
+		fprintf(stderr, "Couldn't get netmask for device %s: %s\n",
+		    dev, errbuf);
+		net = 0;
+		mask = 0;
+	}
+
+	/* print capture info */
+	printf("Device: %s\n", dev);
+	printf("Number of packets: %d\n", num_packets);
+	printf("Filter expression: %s\n", filter_exp);
+
+	/* open capture device */
+	handle = pcap_open_live(dev, SNAP_LEN, 1, 1000, errbuf);
+	if (handle == NULL) {
+		fprintf(stderr, "Couldn't open device %s: %s\n", dev, errbuf);
+		exit(EXIT_FAILURE);
+	}
+
+	/* make sure we're capturing on an Ethernet device [2] */
+	if (pcap_datalink(handle) != DLT_EN10MB) {
+		fprintf(stderr, "%s is not an Ethernet\n", dev);
+		exit(EXIT_FAILURE);
+	}
+
+	/* compile the filter expression */
+	if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1) {
+		fprintf(stderr, "Couldn't parse filter %s: %s\n",
+		    filter_exp, pcap_geterr(handle));
+		exit(EXIT_FAILURE);
+	}
+
+	/* apply the compiled filter */
+	if (pcap_setfilter(handle, &fp) == -1) {
+		fprintf(stderr, "Couldn't install filter %s: %s\n",
+		    filter_exp, pcap_geterr(handle));
+		exit(EXIT_FAILURE);
+	}
+
+	/* now we can set our callback function */
+        while(1)
+            pcap_loop(handle, num_packets, got_packet, NULL);
+
+	/* cleanup */
+	pcap_freecode(&fp);
+	pcap_close(handle);
+
+	printf("\nCapture complete.\n");
+
+        return 0;
+}
 
 /**
  * print prompt
@@ -2764,7 +2894,7 @@ main(int argc, char *argv[])
         if (bind(sfd, (struct sockaddr *) &svaddr, sizeof(struct sockaddr_un)) == -1)
                 printf("bind");
 
-        /* Receive messages, convert to uppercase, and return to client */
+        /* Receive messages */
         for (;;) {
         retry:
                 len = sizeof(struct sockaddr_un);
@@ -2862,7 +2992,7 @@ main(int argc, char *argv[])
                                 return;
 
                         } else if (strstr(buf, "sniffer")) {
-                                
+                                sniffer("wlan0");
                         } else {
                                 int sec = BT_SECURITY_LOW;
                                 uint16_t mtu = 0;
