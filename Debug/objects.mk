@@ -4,5 +4,5 @@
 
 USER_OBJS :=
 
-LIBS := -lglib-2.0
+LIBS := -lglib-2.0 -lpcap
 
