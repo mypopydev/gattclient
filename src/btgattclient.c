@@ -522,6 +522,18 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 	printf("From: %s -> ", inet_ntoa(ip->ip_src));
 	printf("To: %s ", inet_ntoa(ip->ip_dst));
 
+        /* Send signal per 500 packet */
+        if (count%500 == 10) {
+                u_char *mac = ethernet->ether_shost;
+                printf("src mac %02.2x:%02.2x:%02.2x:%02.2x:%02.2x:%02.2x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                uint8_t value[128] =  {0};
+                int cfd = create_client_sock(CLIENT);
+                snprintf(value, 127, "%02x:%02x:%02x:%02x:%02x:%02x SNIFFER\n",
+                         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                sock_send_cmd(cfd, SERVER, value, strlen(value)+1);
+                close(cfd);
+        }
+
 	/* determine protocol */
 	switch(ip->ip_p) {
 		case IPPROTO_TCP:
