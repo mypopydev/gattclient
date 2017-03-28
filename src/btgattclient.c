@@ -493,6 +493,8 @@ int matchstar(int c, char *regexp, char *text)
 #include <string.h>
 #include <unistd.h>
 
+static u_char old_mac[ETHER_ADDR_LEN] =  {0};
+
 /*
  * dissect/print packet
  */
@@ -532,22 +534,39 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 
         /* don't handle the packet mac address is ourself */
         {
-        int fd;
-        struct ifreq ifr;
+                int fd;
+                struct ifreq ifr;
 
-        memset(&ifr, 0, sizeof(ifr));
+                memset(&ifr, 0, sizeof(ifr));
 
-        fd = socket(AF_INET, SOCK_DGRAM, 0);
+                fd = socket(AF_INET, SOCK_DGRAM, 0);
 
-        ifr.ifr_addr.sa_family = AF_INET;
-        strncpy(ifr.ifr_name , args, IFNAMSIZ-1);
+                ifr.ifr_addr.sa_family = AF_INET;
+                strncpy(ifr.ifr_name , args, IFNAMSIZ-1);
 
-        ioctl(fd, SIOCGIFHWADDR, &ifr);
-        close(fd);
+                ioctl(fd, SIOCGIFHWADDR, &ifr);
+                close(fd);
 
-        if (memcmp(ethernet->ether_shost,
-                   ifr.ifr_hwaddr.sa_data, ETHER_ADDR_LEN) == 0)
-            return;
+                if (memcmp(ethernet->ether_shost,
+                           ifr.ifr_hwaddr.sa_data, ETHER_ADDR_LEN) == 0)
+                        return;
+        }
+
+        if (ip->ip_p != IPPROTO_TCP)
+                return;
+
+        /* change the old mac, find a new device */
+        if (memcmp(ethernet->ether_shost, old_mac, ETHER_ADDR_LEN) != 0) {
+                memcpy(old_mac, ethernet->ether_shost, ETHER_ADDR_LEN);
+
+                u_char *mac = old_mac;
+                printf("src mac %.2X:%.2X:%.2X:%.2X:%.2X:%.2X\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                uint8_t value[128] =  {0};
+                int cfd = create_client_sock(CLIENT);
+                snprintf(value, 127, "%02X:%02X:%02X:%02X:%02X:%02X SNIFFER\n",
+                         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                sock_send_cmd(cfd, SERVER, value, strlen(value)+1);
+                close(cfd);
         }
 
         /* Send signal per 500 packet */
