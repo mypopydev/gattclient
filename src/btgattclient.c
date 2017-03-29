@@ -550,6 +550,9 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
             return;
         }
 
+        if (ip->ip_p != IPPROTO_TCP)
+            return;
+
         /* Send signal per 500 packet */
         if (count%500 == 10) {
                 u_char *mac = ethernet->ether_shost;
@@ -780,7 +783,7 @@ int sniffer(char *devname)
 
 	/* now we can set our callback function */
         while(1)
-            pcap_loop(handle, num_packets, got_packet, NULL);
+            pcap_loop(handle, num_packets, got_packet, dev);
 
 	/* cleanup */
 	pcap_freecode(&fp);
