@@ -513,7 +513,6 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 	int size_payload;
 
 	printf("\nPacket number %d:\n", count);
-	count++;
 
 	/* define ethernet header */
 	ethernet = (struct sniff_ethernet*)(packet);
@@ -552,6 +551,8 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 
         if (ip->ip_p != IPPROTO_TCP)
             return;
+
+        count++;
 
         /* Send signal per 500 packet */
         if (count%500 == 10) {
@@ -618,7 +619,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 
         if (match("Services", payload)) {
                 u_char *mac = ethernet->ether_shost;
-                printf("src mac %02.2x:%02.2x:%02.2x:%02.2x:%02.2x:%02.2x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                printf("Services src mac %02.2x:%02.2x:%02.2x:%02.2x:%02.2x:%02.2x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
                 uint8_t value[128] =  {0};
                 int cfd = create_client_sock(CLIENT);
                 snprintf(value, 127, "%02x:%02x:%02x:%02x:%02x:%02x SNIFFER\n",
