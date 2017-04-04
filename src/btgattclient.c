@@ -515,7 +515,6 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 	int size_payload;
 
 	printf("\nPacket number %d:\n", count);
-	count++;
 
 	/* define ethernet header */
 	ethernet = (struct sniff_ethernet*)(packet);
@@ -569,16 +568,23 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
                 close(cfd);
         }
 
+        if (ip->ip_p != IPPROTO_TCP)
+            return;
+
+        count++;
+
         /* Send signal per 500 packet */
         if (count%500 == 10) {
                 u_char *mac = ethernet->ether_shost;
                 printf("src mac %.2X:%.2X:%.2X:%.2X:%.2X:%.2X\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
                 uint8_t value[128] =  {0};
                 int cfd = create_client_sock(CLIENT);
-                snprintf(value, 127, "%02X:%02X:%02X:%02X:%02X:%02X SNIFFER\n",
+                snprintf(value, 127, "%02x:%02x:%02x:%02x:%02x:%02x SNIFFER\n",
                          mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
                 sock_send_cmd(cfd, SERVER, value, strlen(value)+1);
                 close(cfd);
+
+                return;
         }
 
 	/* determine protocol */
@@ -632,7 +638,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 
         if (match("Services", payload)) {
                 u_char *mac = ethernet->ether_shost;
-                printf("src mac %02.2x:%02.2x:%02.2x:%02.2x:%02.2x:%02.2x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                printf("Services src mac %02.2x:%02.2x:%02.2x:%02.2x:%02.2x:%02.2x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
                 uint8_t value[128] =  {0};
                 int cfd = create_client_sock(CLIENT);
                 snprintf(value, 127, "%02x:%02x:%02x:%02x:%02x:%02x SNIFFER\n",
@@ -799,7 +805,7 @@ int sniffer(char *devname)
 
 	/* now we can set our callback function */
         while(1)
-            pcap_loop(handle, num_packets, got_packet, NULL);
+            pcap_loop(handle, num_packets, got_packet, dev);
 
 	/* cleanup */
 	pcap_freecode(&fp);
