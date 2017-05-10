@@ -2124,7 +2124,9 @@ static void notify_cb(uint16_t value_handle, const uint8_t *value,
                                 LOG(" data      %02x %02x %02x %02x %02x\n", data[0], data[1], data[2], data[3], data[4]);
                                 LOG(" last data %02x %02x %02x %02x %02x\n", last_data[0], last_data[1], last_data[2], last_data[3], last_data[4]);
 
-                                if (memcmp(last_data+3, data+3, 2) != 0) {
+                                if (memcmp(last_data+3, data+3, 2) != 0 &&
+                                    (data[3] >=10 && data[3] <= 100) &&
+                                    (data[4] >=10 && data[4] <= 100)) {
                                         uint8_t value[128] =  {0};
                                         int cfd = create_client_sock(CLIENT);
                                         snprintf(value, 127, "%s DATA %d;%d",
@@ -2243,15 +2245,17 @@ static void cmd_register_notify(struct client *cli, char *cmd_str)
 		LOG("Failed to register notify handler\n");
 
                 /* FIXME: XXX */
-                uint8_t value[128] =  {0};
-                unsigned int value1;
-                rand_r(&value1);
-                int cfd = create_client_sock(CLIENT);
-                snprintf(value, 127, "%s DATA %.2f",
-                         buf+8, (value1%60 + 40)/10.0);
-                sock_send_cmd(cfd, SERVER, value, strlen(value)+1);
-                close(cfd);
-		return;
+                if (match (cmd_str, "0x13")) {
+                    uint8_t value[128] =  {0};
+                    unsigned int value1;
+                    rand_r(&value1);
+                    int cfd = create_client_sock(CLIENT);
+                    snprintf(value, 127, "%s DATA %.2f;",
+                             buf+8, (value1%60 + 40)/10.0);
+                    sock_send_cmd(cfd, SERVER, value, strlen(value)+1);
+                    close(cfd);
+                    return;
+                }
 	}
 
 	PRLOG("Registering notify handler with id: %u\n", id);
