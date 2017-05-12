@@ -113,55 +113,12 @@ struct client {
 char buf[BUF_SIZE] = {0};
 
 
-static int sock_send_cmd(int sock, char *server_path, char *cmd, int cmd_len)
-{
-        struct sockaddr_un svaddr;
-        int len = sizeof(struct sockaddr_un);
-
-        memset(&svaddr, 0, sizeof(struct sockaddr_un));
-        svaddr.sun_family = AF_UNIX;
-        strncpy(svaddr.sun_path, server_path, sizeof(svaddr.sun_path) - 1);
-
-        if (sendto(sock, cmd, cmd_len, 0, (struct sockaddr *) &svaddr, len) != cmd_len)
-                printf("sendto");
-
-        return 0;
-}
-
-static int create_client_sock(char *name)
-{
-        struct sockaddr_un claddr;
-        int sfd;
-        char path[128];
-
-        snprintf(path, sizeof(path),
-                 "%s.%d", name, getpid());
-
-        if (remove(path) == -1 && errno != ENOENT)
-                printf("remove unix sock data path\n");
-
-        /* Create  socket; bind to unique pathname */
-        sfd = socket(AF_UNIX, SOCK_DGRAM, 0);
-        if (sfd == -1)
-                printf("create unix socket fail\n");
-
-        memset(&claddr, 0, sizeof(struct sockaddr_un));
-        claddr.sun_family = AF_UNIX;
-        snprintf(&claddr.sun_path[1], sizeof(claddr.sun_path)-2,
-                 "%s", path);
-
-        if (bind(sfd, (struct sockaddr *) &claddr, sizeof(struct sockaddr_un)) == -1)
-            printf("bind error %s\n", name);
-
-        return sfd;
-}
-
-
 #define NELEMS(array) (sizeof(array) / sizeof(array[0]))
 
 #include <stdarg.h>
 #include <time.h>
 #include <sys/time.h>
+#include <syslog.h>
 
 static void LOG(const char *fmt, ...)
 {
@@ -178,7 +135,56 @@ static void LOG(const char *fmt, ...)
 	va_start(args, fmt);
 	vprintf(fmt, args);
 	va_end(args);
+
+        /* send the message to syslog */
+        va_start(args, fmt);
+        vsyslog(LOG_INFO, fmt, args);
+        va_end(args);
 }
+
+static int sock_send_cmd(int sock, char *server_path, char *cmd, int cmd_len)
+{
+        struct sockaddr_un svaddr;
+        int len = sizeof(struct sockaddr_un);
+
+        memset(&svaddr, 0, sizeof(struct sockaddr_un));
+        svaddr.sun_family = AF_UNIX;
+        strncpy(svaddr.sun_path, server_path, sizeof(svaddr.sun_path) - 1);
+
+        if (sendto(sock, cmd, cmd_len, 0, (struct sockaddr *) &svaddr, len) != cmd_len)
+                LOG("sendto\n");
+
+        return 0;
+}
+
+static int create_client_sock(char *name)
+{
+        struct sockaddr_un claddr;
+        int sfd;
+        char path[128];
+
+        snprintf(path, sizeof(path),
+                 "%s.%d", name, getpid());
+
+        if (remove(path) == -1 && errno != ENOENT)
+                LOG("remove unix sock data path\n");
+
+        /* Create  socket; bind to unique pathname */
+        sfd = socket(AF_UNIX, SOCK_DGRAM, 0);
+        if (sfd == -1)
+                LOG("create unix socket fail\n");
+
+        memset(&claddr, 0, sizeof(struct sockaddr_un));
+        claddr.sun_family = AF_UNIX;
+        snprintf(&claddr.sun_path[1], sizeof(claddr.sun_path)-2,
+                 "%s", path);
+
+        if (bind(sfd, (struct sockaddr *) &claddr, sizeof(struct sockaddr_un)) == -1)
+            LOG("bind error %s\n", name);
+
+        return sfd;
+}
+
 
 static void hexdump(void *buf, long size)
 {
@@ -219,7 +225,7 @@ static void hexdump(void *buf, long size)
 
 		sz_buf[index+1] = ' ';
 
-		printf("%s\n", sz_buf);
+		LOG("%s\n", sz_buf);
 
 		buff.data += out_len;
 		buff.size -= out_len;
@@ -324,10 +330,10 @@ void
 print_app_banner(void)
 {
 
-	printf("%s - %s\n", APP_NAME, APP_DESC);
-	printf("%s\n", APP_COPYRIGHT);
-	printf("%s\n", APP_DISCLAIMER);
-	printf("\n");
+	LOG("%s - %s\n", APP_NAME, APP_DESC);
+	LOG("%s\n", APP_COPYRIGHT);
+	LOG("%s\n", APP_DISCLAIMER);
+	LOG("\n");
 
         return;
 }
@@ -339,11 +345,11 @@ void
 print_app_usage(void)
 {
 
-	printf("Usage: %s [interface]\n", APP_NAME);
-	printf("\n");
-	printf("Options:\n");
-	printf("    interface    Listen on <interface> for packets.\n");
-	printf("\n");
+	LOG("Usage: %s [interface]\n", APP_NAME);
+	LOG("\n");
+	LOG("Options:\n");
+	LOG("    interface    Listen on <interface> for packets.\n");
+	LOG("\n");
 
         return;
 }
@@ -362,44 +368,44 @@ print_hex_ascii_line(u_char *payload, int len, int offset)
 	u_char *ch;
 
 	/* offset */
-	printf("%05d   ", offset);
+	LOG("%05d   ", offset);
 
 	/* hex */
 	ch = payload;
 	for(i = 0; i < len; i++) {
-		printf("%02x ", *ch);
+		LOG("%02x ", *ch);
 		ch++;
 		/* print extra space after 8th byte for visual aid */
 		if (i == 7)
-			printf(" ");
+			LOG(" ");
 	}
 	/* print space to handle line less than 8 bytes */
 	if (len < 8)
-		printf(" ");
+		LOG(" ");
 
 	/* fill hex gap with spaces if not full line */
 	if (len < 16) {
 		gap = 16 - len;
 		for (i = 0; i < gap; i++) {
-			printf("   ");
+			LOG("   ");
 		}
 	}
-	printf("   ");
+	LOG("   ");
 
 	/* ascii (if printable) */
 	ch = payload;
 	for(i = 0; i < len; i++) {
 		if (isprint(*ch))
-			printf("%c", *ch);
+			LOG("%c", *ch);
 		else {
-			printf(".");
+			LOG(".");
                         /* change with "." for no-display char */
                         *ch = '.';
                 }
 		ch++;
 	}
 
-	printf("\n");
+	LOG("\n");
 
         return;
 }
@@ -514,7 +520,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 	int size_tcp;
 	int size_payload;
 
-	printf("\nPacket number %d:\n", count);
+	LOG("\nPacket number %d:\n", count);
 
 	/* define ethernet header */
 	ethernet = (struct sniff_ethernet*)(packet);
@@ -523,13 +529,13 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 	ip = (struct sniff_ip *)(packet + SIZE_ETHERNET);
 	size_ip = IP_HL(ip)*4;
 	if (size_ip < 20) {
-		printf("   * Invalid IP header length: %u bytes\n", size_ip);
+		LOG("   * Invalid IP header length: %u bytes\n", size_ip);
 		return;
 	}
 
 	/* print source and destination IP addresses */
-	printf("From: %s -> ", inet_ntoa(ip->ip_src));
-	printf("To: %s ", inet_ntoa(ip->ip_dst));
+	LOG("From: %s -> ", inet_ntoa(ip->ip_src));
+	LOG("To: %s ", inet_ntoa(ip->ip_dst));
 
         /* don't handle the packet mac address is ourself */
         {
@@ -576,10 +582,10 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
         /* Send signal per 500 packet */
         if (count%500 == 10) {
                 u_char *mac = ethernet->ether_shost;
-                printf("src mac %.2X:%.2X:%.2X:%.2X:%.2X:%.2X\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                LOG("src mac %.2X:%.2X:%.2X:%.2X:%.2X:%.2X\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
                 uint8_t value[128] =  {0};
                 int cfd = create_client_sock(CLIENT);
-                snprintf(value, 127, "%02x:%02x:%02x:%02x:%02x:%02x SNIFFER\n",
+                snprintf(value, 127, "%02x:%02x:%02x:%02x:%02x:%02x SNIFFER",
                          mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
                 sock_send_cmd(cfd, SERVER, value, strlen(value)+1);
                 close(cfd);
@@ -590,19 +596,19 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 	/* determine protocol */
 	switch(ip->ip_p) {
 		case IPPROTO_TCP:
-			printf(" Protocol: TCP");
+			LOG(" Protocol: TCP");
 			break;
 		case IPPROTO_UDP:
-			printf(" Protocol: UDP");
+			LOG(" Protocol: UDP");
 			return;
 		case IPPROTO_ICMP:
-			printf(" Protocol: ICMP");
+			LOG(" Protocol: ICMP");
 			return;
 		case IPPROTO_IP:
-			printf(" Protocol: IP");
+			LOG(" Protocol: IP");
 			return;
 		default:
-			printf(" Protocol: unknown");
+			LOG(" Protocol: unknown");
 			return;
 	}
 
@@ -614,12 +620,12 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 	tcp = (struct sniff_tcp *)(packet + SIZE_ETHERNET + size_ip);
 	size_tcp = TH_OFF(tcp)*4;
 	if (size_tcp < 20) {
-		printf("   * Invalid TCP header length: %u bytes\n", size_tcp);
+		LOG("   * Invalid TCP header length: %u bytes\n", size_tcp);
 		return;
 	}
 
-	printf("Src port: %d ", ntohs(tcp->th_sport));
-	printf("Dst port: %d\n", ntohs(tcp->th_dport));
+	LOG("Src port: %d ", ntohs(tcp->th_sport));
+	LOG("Dst port: %d\n", ntohs(tcp->th_dport));
 
 	/* define/compute tcp payload (segment) offset */
 	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
@@ -632,16 +638,16 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, u_char *packet)
 	 * treat it as a string.
 	 */
 	if (size_payload > 0) {
-		printf("   Payload (%d bytes):\n", size_payload);
+		LOG("   Payload (%d bytes):\n", size_payload);
 		print_payload(payload, size_payload);
 	}
 
         if (match("Services", payload)) {
                 u_char *mac = ethernet->ether_shost;
-                printf("Services src mac %02.2x:%02.2x:%02.2x:%02.2x:%02.2x:%02.2x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                LOG("Services src mac %02.2x:%02.2x:%02.2x:%02.2x:%02.2x:%02.2x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
                 uint8_t value[128] =  {0};
                 int cfd = create_client_sock(CLIENT);
-                snprintf(value, 127, "%02x:%02x:%02x:%02x:%02x:%02x SNIFFER\n",
+                snprintf(value, 127, "%02x:%02x:%02x:%02x:%02x:%02x SNIFFER",
                          mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
                 sock_send_cmd(cfd, SERVER, value, strlen(value)+1);
                 close(cfd);
@@ -757,7 +763,7 @@ int sniffer(char *devname)
 		/* find a capture device if not specified on command-line */
 		dev = pcap_lookupdev(errbuf);
 		if (dev == NULL) {
-			fprintf(stderr, "Couldn't find default device: %s\n",
+			LOG("Couldn't find default device: %s\n",
 			    errbuf);
 			exit(EXIT_FAILURE);
 		}
@@ -765,40 +771,40 @@ int sniffer(char *devname)
 
 	/* get network number and mask associated with capture device */
 	if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) {
-		fprintf(stderr, "Couldn't get netmask for device %s: %s\n",
+		LOG("Couldn't get netmask for device %s: %s\n",
 		    dev, errbuf);
 		net = 0;
 		mask = 0;
 	}
 
 	/* print capture info */
-	printf("Device: %s\n", dev);
-	printf("Number of packets: %d\n", num_packets);
-	printf("Filter expression: %s\n", filter_exp);
+	LOG("Device: %s\n", dev);
+	LOG("Number of packets: %d\n", num_packets);
+	LOG("Filter expression: %s\n", filter_exp);
 
 	/* open capture device */
 	handle = pcap_open_live(dev, SNAP_LEN, 1, 1000, errbuf);
 	if (handle == NULL) {
-		fprintf(stderr, "Couldn't open device %s: %s\n", dev, errbuf);
+		LOG("Couldn't open device %s: %s\n", dev, errbuf);
 		exit(EXIT_FAILURE);
 	}
 
 	/* make sure we're capturing on an Ethernet device [2] */
 	if (pcap_datalink(handle) != DLT_EN10MB) {
-		fprintf(stderr, "%s is not an Ethernet\n", dev);
+		LOG("%s is not an Ethernet\n", dev);
 		exit(EXIT_FAILURE);
 	}
 
 	/* compile the filter expression */
 	if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1) {
-		fprintf(stderr, "Couldn't parse filter %s: %s\n",
+		LOG("Couldn't parse filter %s: %s\n",
 		    filter_exp, pcap_geterr(handle));
 		exit(EXIT_FAILURE);
 	}
 
 	/* apply the compiled filter */
 	if (pcap_setfilter(handle, &fp) == -1) {
-		fprintf(stderr, "Couldn't install filter %s: %s\n",
+		LOG("Couldn't install filter %s: %s\n",
 		    filter_exp, pcap_geterr(handle));
 		exit(EXIT_FAILURE);
 	}
@@ -811,7 +817,7 @@ int sniffer(char *devname)
 	pcap_freecode(&fp);
 	pcap_close(handle);
 
-	printf("\nCapture complete.\n");
+	LOG("\nCapture complete.\n");
 
         return 0;
 }
@@ -821,7 +827,7 @@ int sniffer(char *devname)
  */
 static void print_prompt(void)
 {
-	printf(COLOR_BLUE "[GATT client]" COLOR_OFF "# ");
+	LOG(COLOR_BLUE "[GATT client]" COLOR_OFF "# ");
 	fflush(stdout);
 }
 
@@ -887,7 +893,7 @@ static const char *ecode_to_string(uint8_t ecode)
  */
 static void att_disconnect_cb(int err, void *user_data)
 {
-	printf("Device disconnected: %s\n", strerror(err));
+	LOG("Device disconnected: %s\n", strerror(err));
 
 	mainloop_quit();
 }
@@ -1068,7 +1074,7 @@ static void print_uuid(const bt_uuid_t *uuid)
 	bt_uuid_to_uuid128(uuid, &uuid128);
 	bt_uuid_to_string(&uuid128, uuid_str, sizeof(uuid_str));
 
-	printf("%s\n", uuid_str);
+	LOG("%s\n", uuid_str);
 }
 
 /**
@@ -1093,7 +1099,7 @@ static void print_incl(struct gatt_db_attribute *attr, void *user_data)
 
 	gatt_db_attribute_get_service_uuid(service, &uuid);
 
-	printf("\t  " COLOR_GREEN "include" COLOR_OFF " - handle: "
+	LOG("\t  " COLOR_GREEN "include" COLOR_OFF " - handle: "
 					"0x%04x, - start: 0x%04x, end: 0x%04x,"
 					"uuid: ", handle, start, end);
 	print_uuid(&uuid);
@@ -1107,7 +1113,7 @@ static void print_incl(struct gatt_db_attribute *attr, void *user_data)
  */
 static void print_desc(struct gatt_db_attribute *attr, void *user_data)
 {
-	printf("\t\t  " COLOR_MAGENTA "descr" COLOR_OFF
+	LOG("\t\t  " COLOR_MAGENTA "descr" COLOR_OFF
 					" - handle: 0x%04x, uuid: ",
 					gatt_db_attribute_get_handle(attr));
 	print_uuid(gatt_db_attribute_get_type(attr));
@@ -1131,7 +1137,7 @@ static void print_chrc(struct gatt_db_attribute *attr, void *user_data)
 								&uuid))
 		return;
 
-	printf("\t  " COLOR_YELLOW "charac" COLOR_OFF
+	LOG("\t  " COLOR_YELLOW "charac" COLOR_OFF
 					" - start: 0x%04x, value: 0x%04x, "
 					"props: 0x%02x, uuid: ",
 					handle, value_handle, properties);
@@ -1157,7 +1163,7 @@ static void print_service(struct gatt_db_attribute *attr, void *user_data)
 									&uuid))
 		return;
 
-	printf(COLOR_RED "service" COLOR_OFF " - start: 0x%04x, "
+	LOG(COLOR_RED "service" COLOR_OFF " - start: 0x%04x, "
 				"end: 0x%04x, type: %s, uuid: ",
 				start, end, primary ? "primary" : "secondary");
 	print_uuid(&uuid);
@@ -1165,7 +1171,7 @@ static void print_service(struct gatt_db_attribute *attr, void *user_data)
 	gatt_db_service_foreach_incl(attr, print_incl, cli);
 	gatt_db_service_foreach_char(attr, print_chrc, NULL);
 
-	printf("\n");
+	LOG("\n");
 }
 
 /**
@@ -1175,7 +1181,7 @@ static void print_service(struct gatt_db_attribute *attr, void *user_data)
  */
 static void print_services(struct client *cli)
 {
-	printf("\n");
+	LOG("\n");
 
 	gatt_db_foreach_service(cli->db, NULL, print_service, cli);
 }
@@ -1188,7 +1194,7 @@ static void print_services(struct client *cli)
  */
 static void print_services_by_uuid(struct client *cli, const bt_uuid_t *uuid)
 {
-	printf("\n");
+	LOG("\n");
 
 	gatt_db_foreach_service(cli->db, uuid, print_service, cli);
 }
@@ -1201,7 +1207,7 @@ static void print_services_by_uuid(struct client *cli, const bt_uuid_t *uuid)
  */
 static void print_services_by_handle(struct client *cli, uint16_t handle)
 {
-	printf("\n");
+	LOG("\n");
 
 	/* TODO: Filter by handle */
 	gatt_db_foreach_service(cli->db, NULL, print_service, cli);
@@ -1231,8 +1237,8 @@ static void ready_cb(bool success, uint8_t att_ecode, void *user_data)
 
         char cmd[128] = {0};
         int cfd = create_client_sock(CLIENT);
-        snprintf(cmd, 127, "%s CONNECT sucess\n", buf+8);
-        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+        snprintf(cmd, 127, "%s CONNECT sucess", buf+8);
+        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd)+1);
         close(cfd);
 }
 
@@ -1248,7 +1254,7 @@ static void service_changed_cb(uint16_t start_handle, uint16_t end_handle,
 {
 	struct client *cli = user_data;
 
-	printf("\nService Changed handled - start: 0x%04x end: 0x%04x\n",
+	LOG("\nService Changed handled - start: 0x%04x end: 0x%04x\n",
 						start_handle, end_handle);
 
 	gatt_db_foreach_service_in_range(cli->db, NULL, print_service, cli,
@@ -1261,7 +1267,7 @@ static void service_changed_cb(uint16_t start_handle, uint16_t end_handle,
  */
 static void services_usage(void)
 {
-	printf("Usage: services [options]\nOptions:\n"
+	LOG("Usage: services [options]\nOptions:\n"
 		"\t -u, --uuid <uuid>\tService UUID\n"
 		"\t -a, --handle <handle>\tService start handle\n"
 		"\t -h, --help\t\tShow help message\n"
@@ -1309,7 +1315,7 @@ static void cmd_services(struct client *cli, char *cmd_str)
 	int argc = 0;
 
 	if (!bt_gatt_client_is_ready(cli->gatt)) {
-		printf("GATT client not initialized\n");
+		LOG("GATT client not initialized\n");
 		return;
 	}
 
@@ -1332,7 +1338,7 @@ static void cmd_services(struct client *cli, char *cmd_str)
 		bt_uuid_t tmp, uuid;
 
 		if (bt_string_to_uuid(&tmp, argv[1]) < 0) {
-			printf("Invalid UUID: %s\n", argv[1]);
+			LOG("Invalid UUID: %s\n", argv[1]);
 			return;
 		}
 
@@ -1345,7 +1351,7 @@ static void cmd_services(struct client *cli, char *cmd_str)
 
 		handle = strtol(argv[1], &endptr, 0);
 		if (!endptr || *endptr != '\0') {
-			printf("Invalid start handle: %s\n", argv[1]);
+			LOG("Invalid start handle: %s\n", argv[1]);
 			return;
 		}
 
@@ -1359,7 +1365,7 @@ static void cmd_services(struct client *cli, char *cmd_str)
  */
 static void read_multiple_usage(void)
 {
-	printf("Usage: read-multiple <handle_1> <handle_2> ...\n");
+	LOG("Usage: read-multiple <handle_1> <handle_2> ...\n");
 }
 
 /**
@@ -1382,10 +1388,10 @@ static void read_multiple_cb(bool success, uint8_t att_ecode,
 		return;
 	}
 
-	printf("\nRead multiple value (%u bytes):", length);
+	LOG("\nRead multiple value (%u bytes):", length);
 
 	for (i = 0; i < length; i++)
-		printf("%02x ", value[i]);
+		LOG("%02x ", value[i]);
 
 	PRLOG("\n");
 }
@@ -1405,7 +1411,7 @@ static void cmd_read_multiple(struct client *cli, char *cmd_str)
 	char *endptr = NULL;
 
 	if (!bt_gatt_client_is_ready(cli->gatt)) {
-		printf("GATT client not initialized\n");
+		LOG("GATT client not initialized\n");
 		return;
 	}
 
@@ -1416,14 +1422,14 @@ static void cmd_read_multiple(struct client *cli, char *cmd_str)
 
 	value = malloc(sizeof(uint16_t) * argc);
 	if (!value) {
-		printf("Failed to construct value\n");
+		LOG("Failed to construct value\n");
 		return;
 	}
 
 	for (i = 0; i < argc; i++) {
 		value[i] = strtol(argv[i], &endptr, 0);
 		if (endptr == argv[i] || *endptr != '\0' || !value[i]) {
-			printf("Invalid value byte: %s\n", argv[i]);
+			LOG("Invalid value byte: %s\n", argv[i]);
 			free(value);
 			return;
 		}
@@ -1431,7 +1437,7 @@ static void cmd_read_multiple(struct client *cli, char *cmd_str)
 
 	if (!bt_gatt_client_read_multiple(cli->gatt, value, argc,
 						read_multiple_cb, NULL, NULL))
-		printf("Failed to initiate read multiple procedure\n");
+		LOG("Failed to initiate read multiple procedure\n");
 
 	free(value);
 }
@@ -1441,7 +1447,7 @@ static void cmd_read_multiple(struct client *cli, char *cmd_str)
  */
 static void read_value_usage(void)
 {
-	printf("Usage: read-value <value_handle>\n");
+	LOG("Usage: read-value <value_handle>\n");
 }
 
 /**
@@ -1464,17 +1470,17 @@ static void read_cb(bool success, uint8_t att_ecode, const uint8_t *value,
 		return;
 	}
 
-	printf("\nRead value");
+	LOG("\nRead value");
 
 	if (length == 0) {
 		PRLOG(": 0 bytes\n");
 		return;
 	}
 
-	printf(" (%u bytes): ", length);
+	LOG(" (%u bytes): ", length);
 
 	for (i = 0; i < length; i++)
-		printf("%02x ", value[i]);
+		LOG("%02x ", value[i]);
 
 	PRLOG("\n");
 }
@@ -1493,7 +1499,7 @@ static void cmd_read_value(struct client *cli, char *cmd_str)
 	char *endptr = NULL;
 
 	if (!bt_gatt_client_is_ready(cli->gatt)) {
-		printf("GATT client not initialized\n");
+		LOG("GATT client not initialized\n");
 		return;
 	}
 
@@ -1504,13 +1510,13 @@ static void cmd_read_value(struct client *cli, char *cmd_str)
 
 	handle = strtol(argv[0], &endptr, 0);
 	if (!endptr || *endptr != '\0' || !handle) {
-		printf("Invalid value handle: %s\n", argv[0]);
+		LOG("Invalid value handle: %s\n", argv[0]);
 		return;
 	}
 
 	if (!bt_gatt_client_read_value(cli->gatt, handle, read_cb,
 								NULL, NULL))
-		printf("Failed to initiate read value procedure\n");
+		LOG("Failed to initiate read value procedure\n");
 }
 
 /**
@@ -1518,7 +1524,7 @@ static void cmd_read_value(struct client *cli, char *cmd_str)
  */
 static void read_long_value_usage(void)
 {
-	printf("Usage: read-long-value <value_handle> <offset>\n");
+	LOG("Usage: read-long-value <value_handle> <offset>\n");
 }
 
 /**
@@ -1536,7 +1542,7 @@ static void cmd_read_long_value(struct client *cli, char *cmd_str)
 	char *endptr = NULL;
 
 	if (!bt_gatt_client_is_ready(cli->gatt)) {
-		printf("GATT client not initialized\n");
+		LOG("GATT client not initialized\n");
 		return;
 	}
 
@@ -1547,20 +1553,20 @@ static void cmd_read_long_value(struct client *cli, char *cmd_str)
 
 	handle = strtol(argv[0], &endptr, 0);
 	if (!endptr || *endptr != '\0' || !handle) {
-		printf("Invalid value handle: %s\n", argv[0]);
+		LOG("Invalid value handle: %s\n", argv[0]);
 		return;
 	}
 
 	endptr = NULL;
 	offset = strtol(argv[1], &endptr, 0);
 	if (!endptr || *endptr != '\0') {
-		printf("Invalid offset: %s\n", argv[1]);
+		LOG("Invalid offset: %s\n", argv[1]);
 		return;
 	}
 
 	if (!bt_gatt_client_read_long_value(cli->gatt, handle, offset, read_cb,
 								NULL, NULL))
-		printf("Failed to initiate read long value procedure\n");
+		LOG("Failed to initiate read long value procedure\n");
 }
 
 /**
@@ -1568,7 +1574,7 @@ static void cmd_read_long_value(struct client *cli, char *cmd_str)
  */
 static void write_value_usage(void)
 {
-	printf("Usage: write-value [options] <value_handle> <value>\n"
+	LOG("Usage: write-value [options] <value_handle> <value>\n"
 		"Options:\n"
 		"\t-w, --without-response\tWrite without response\n"
 		"\t-s, --signed-write\tSigned write command\n"
@@ -1619,12 +1625,12 @@ static void cmd_write_value(struct client *cli, char *cmd_str)
 	bool signed_write = false;
 
 	if (!bt_gatt_client_is_ready(cli->gatt)) {
-		printf("GATT client not initialized\n");
+		LOG("GATT client not initialized\n");
 		return;
 	}
 
 	if (!parse_args(cmd_str, 514, argv + 1, &argc)) {
-		printf("Too many arguments\n");
+		LOG("Too many arguments\n");
 		write_value_usage();
 		return;
 	}
@@ -1656,7 +1662,7 @@ static void cmd_write_value(struct client *cli, char *cmd_str)
 
 	handle = strtol(argv[0], &endptr, 0);
 	if (!endptr || *endptr != '\0' || !handle) {
-		printf("Invalid handle: %s\n", argv[0]);
+		LOG("Invalid handle: %s\n", argv[0]);
 		return;
 	}
 
@@ -1664,19 +1670,19 @@ static void cmd_write_value(struct client *cli, char *cmd_str)
 
 	if (length > 0) {
 		if (length > UINT16_MAX) {
-			printf("Write value too long\n");
+			LOG("Write value too long\n");
 			return;
 		}
 
 		value = malloc(length);
 		if (!value) {
-			printf("Failed to construct write value\n");
+			LOG("Failed to construct write value\n");
 			return;
 		}
 
 		for (i = 1; i < argc; i++) {
 			if (strlen(argv[i]) != 2) {
-				printf("Invalid value byte: %s\n",
+				LOG("Invalid value byte: %s\n",
 								argv[i]);
 				goto done;
 			}
@@ -1684,7 +1690,7 @@ static void cmd_write_value(struct client *cli, char *cmd_str)
 			value[i-1] = strtol(argv[i], &endptr, 0);
 			if (endptr == argv[i] || *endptr != '\0'
 							|| errno == ERANGE) {
-				printf("Invalid value byte: %s\n",
+				LOG("Invalid value byte: %s\n",
 								argv[i]);
 				goto done;
 			}
@@ -1694,19 +1700,19 @@ static void cmd_write_value(struct client *cli, char *cmd_str)
 	if (without_response) {
 		if (!bt_gatt_client_write_without_response(cli->gatt, handle,
 						signed_write, value, length)) {
-			printf("Failed to initiate write without response "
+			LOG("Failed to initiate write without response "
 								"procedure\n");
 			goto done;
 		}
 
-		printf("Write command sent\n");
+		LOG("Write command sent\n");
 		goto done;
 	}
 
 	if (!bt_gatt_client_write_value(cli->gatt, handle, value, length,
 								write_cb,
 								NULL, NULL))
-		printf("Failed to initiate write procedure\n");
+		LOG("Failed to initiate write procedure\n");
 
 done:
 	free(value);
@@ -1717,7 +1723,7 @@ done:
  */
 static void write_long_value_usage(void)
 {
-	printf("Usage: write-long-value [options] <value_handle> <offset> "
+	LOG("Usage: write-long-value [options] <value_handle> <offset> "
 				"<value>\n"
 				"Options:\n"
 				"\t-r, --reliable-write\tReliable write\n"
@@ -1771,12 +1777,12 @@ static void cmd_write_long_value(struct client *cli, char *cmd_str)
 	bool reliable_writes = false;
 
 	if (!bt_gatt_client_is_ready(cli->gatt)) {
-		printf("GATT client not initialized\n");
+		LOG("GATT client not initialized\n");
 		return;
 	}
 
 	if (!parse_args(cmd_str, 514, argv + 1, &argc)) {
-		printf("Too many arguments\n");
+		LOG("Too many arguments\n");
 		write_value_usage();
 		return;
 	}
@@ -1805,14 +1811,14 @@ static void cmd_write_long_value(struct client *cli, char *cmd_str)
 
 	handle = strtol(argv[0], &endptr, 0);
 	if (!endptr || *endptr != '\0' || !handle) {
-		printf("Invalid handle: %s\n", argv[0]);
+		LOG("Invalid handle: %s\n", argv[0]);
 		return;
 	}
 
 	endptr = NULL;
 	offset = strtol(argv[1], &endptr, 0);
 	if (!endptr || *endptr != '\0' || errno == ERANGE) {
-		printf("Invalid offset: %s\n", argv[1]);
+		LOG("Invalid offset: %s\n", argv[1]);
 		return;
 	}
 
@@ -1820,19 +1826,19 @@ static void cmd_write_long_value(struct client *cli, char *cmd_str)
 
 	if (length > 0) {
 		if (length > UINT16_MAX) {
-			printf("Write value too long\n");
+			LOG("Write value too long\n");
 			return;
 		}
 
 		value = malloc(length);
 		if (!value) {
-			printf("Failed to construct write value\n");
+			LOG("Failed to construct write value\n");
 			return;
 		}
 
 		for (i = 2; i < argc; i++) {
 			if (strlen(argv[i]) != 2) {
-				printf("Invalid value byte: %s\n",
+				LOG("Invalid value byte: %s\n",
 								argv[i]);
 				free(value);
 				return;
@@ -1841,7 +1847,7 @@ static void cmd_write_long_value(struct client *cli, char *cmd_str)
 			value[i-2] = strtol(argv[i], &endptr, 0);
 			if (endptr == argv[i] || *endptr != '\0'
 							|| errno == ERANGE) {
-				printf("Invalid value byte: %s\n",
+				LOG("Invalid value byte: %s\n",
 								argv[i]);
 				free(value);
 				return;
@@ -1853,7 +1859,7 @@ static void cmd_write_long_value(struct client *cli, char *cmd_str)
 							offset, value, length,
 							write_long_cb,
 							NULL, NULL))
-		printf("Failed to initiate long write procedure\n");
+		LOG("Failed to initiate long write procedure\n");
 
 	free(value);
 }
@@ -1863,7 +1869,7 @@ static void cmd_write_long_value(struct client *cli, char *cmd_str)
  */
 static void write_prepare_usage(void)
 {
-	printf("Usage: write-prepare [options] <value_handle> <offset> "
+	LOG("Usage: write-prepare [options] <value_handle> <offset> "
 				"<value>\n"
 				"Options:\n"
 				"\t-s, --session-id\tSession id\n"
@@ -1896,12 +1902,12 @@ static void cmd_write_prepare(struct client *cli, char *cmd_str)
 	uint8_t *value = NULL;
 
 	if (!bt_gatt_client_is_ready(cli->gatt)) {
-		printf("GATT client not initialized\n");
+		LOG("GATT client not initialized\n");
 		return;
 	}
 
 	if (!parse_args(cmd_str, 514, argv + 1, &argc)) {
-		printf("Too many arguments\n");
+		LOG("Too many arguments\n");
 		write_value_usage();
 		return;
 	}
@@ -1938,21 +1944,21 @@ static void cmd_write_prepare(struct client *cli, char *cmd_str)
 	}
 
 	if (cli->reliable_session_id != id) {
-		printf("Session id != Ongoing session id (%u!=%u)\n", id,
+		LOG("Session id != Ongoing session id (%u!=%u)\n", id,
 						cli->reliable_session_id);
 		return;
 	}
 
 	handle = strtol(argv[0], &endptr, 0);
 	if (!endptr || *endptr != '\0' || !handle) {
-		printf("Invalid handle: %s\n", argv[0]);
+		LOG("Invalid handle: %s\n", argv[0]);
 		return;
 	}
 
 	endptr = NULL;
 	offset = strtol(argv[1], &endptr, 0);
 	if (!endptr || *endptr != '\0' || errno == ERANGE) {
-		printf("Invalid offset: %s\n", argv[1]);
+		LOG("Invalid offset: %s\n", argv[1]);
 		return;
 	}
 
@@ -1966,26 +1972,26 @@ static void cmd_write_prepare(struct client *cli, char *cmd_str)
 		goto done;
 
 	if (length > UINT16_MAX) {
-		printf("Write value too long\n");
+		LOG("Write value too long\n");
 		return;
 	}
 
 	value = malloc(length);
 	if (!value) {
-		printf("Failed to allocate memory for value\n");
+		LOG("Failed to allocate memory for value\n");
 		return;
 	}
 
 	for (i = 2; i < argc; i++) {
 		if (strlen(argv[i]) != 2) {
-			printf("Invalid value byte: %s\n", argv[i]);
+			LOG("Invalid value byte: %s\n", argv[i]);
 			free(value);
 			return;
 		}
 
 		value[i-2] = strtol(argv[i], &endptr, 0);
 		if (endptr == argv[i] || *endptr != '\0' || errno == ERANGE) {
-			printf("Invalid value byte: %s\n", argv[i]);
+			LOG("Invalid value byte: %s\n", argv[i]);
 			free(value);
 			return;
 		}
@@ -1999,9 +2005,9 @@ done:
 							write_long_cb, NULL,
 							NULL);
 	if (!cli->reliable_session_id)
-		printf("Failed to proceed prepare write\n");
+		LOG("Failed to proceed prepare write\n");
 	else
-		printf("Prepare write success.\n"
+		LOG("Prepare write success.\n"
 				"Session id: %d to be used on next write\n",
 						cli->reliable_session_id);
 
@@ -2013,7 +2019,7 @@ done:
  */
 static void write_execute_usage(void)
 {
-	printf("Usage: write-execute <session_id> <execute>\n"
+	LOG("Usage: write-execute <session_id> <execute>\n"
 				"e.g.:\n"
 				"\twrite-execute 1 0\n");
 }
@@ -2034,12 +2040,12 @@ static void cmd_write_execute(struct client *cli, char *cmd_str)
 	bool execute;
 
 	if (!bt_gatt_client_is_ready(cli->gatt)) {
-		printf("GATT client not initialized\n");
+		LOG("GATT client not initialized\n");
 		return;
 	}
 
 	if (!parse_args(cmd_str, 514, argv, &argc)) {
-		printf("Too many arguments\n");
+		LOG("Too many arguments\n");
 		write_value_usage();
 		return;
 	}
@@ -2051,26 +2057,26 @@ static void cmd_write_execute(struct client *cli, char *cmd_str)
 
 	session_id = strtol(argv[0], &endptr, 0);
 	if (!endptr || *endptr != '\0') {
-		printf("Invalid session id: %s\n", argv[0]);
+		LOG("Invalid session id: %s\n", argv[0]);
 		return;
 	}
 
 	if (session_id != cli->reliable_session_id) {
-		printf("Invalid session id: %u != %u\n", session_id,
+		LOG("Invalid session id: %u != %u\n", session_id,
 						cli->reliable_session_id);
 		return;
 	}
 
 	execute = !!strtol(argv[1], &endptr, 0);
 	if (!endptr || *endptr != '\0') {
-		printf("Invalid execute: %s\n", argv[1]);
+		LOG("Invalid execute: %s\n", argv[1]);
 		return;
 	}
 
 	if (execute) {
 		if (!bt_gatt_client_write_execute(cli->gatt, session_id,
 							write_cb, NULL, NULL))
-			printf("Failed to proceed write execute\n");
+			LOG("Failed to proceed write execute\n");
 	} else {
 		bt_gatt_client_cancel(cli->gatt, session_id);
 	}
@@ -2083,7 +2089,7 @@ static void cmd_write_execute(struct client *cli, char *cmd_str)
  */
 static void register_notify_usage(void)
 {
-	printf("Usage: register-notify <chrc value handle>\n");
+	LOG("Usage: register-notify <chrc value handle>\n");
 }
 
 /**
@@ -2107,24 +2113,24 @@ static void notify_cb(uint16_t value_handle, const uint8_t *value,
 {
 	int i;
 
-	printf("\n\tHandle Value Not/Ind: 0x%04x - ", value_handle);
+	LOG("\n\tHandle Value Not/Ind: 0x%04x - ", value_handle);
 
 	if (length == 0) {
 		PRLOG("(0 bytes)\n");
 		return;
 	}
 
-	printf("buf %s (%u bytes): ", buf, length);
+	LOG("buf %s (%u bytes): ", buf, length);
 
 	for (i = 0; i < length; i++)
-		printf("%02x ", value[i]);
+		LOG("%02x ", value[i]);
 
 	//PRLOG("\n");
-        printf("\n");
+        LOG("\n");
 
         if (value_handle == 0x35) {
                 for (i = 0; i < length; i++) {
-                        //printf("%02x %02x %02x %02x %02x\n", data[0], data[1], data[2], data[3], data[4]);
+                        //LOG("%02x %02x %02x %02x %02x\n", data[0], data[1], data[2], data[3], data[4]);
                         if (value[i] == 0x80)  {/* find the start header */
                                 start_header = 1;
                                 j = 0;
@@ -2134,15 +2140,17 @@ static void notify_cb(uint16_t value_handle, const uint8_t *value,
                                 data[j++] = value[i];
                         }
                         if (start_header == 1 && j == 5) {
-                                printf(" data      %02x %02x %02x %02x %02x\n", data[0], data[1], data[2], data[3], data[4]);
-                                printf(" last data %02x %02x %02x %02x %02x\n", last_data[0], last_data[1], last_data[2], last_data[3], last_data[4]);
+                                LOG(" data      %02x %02x %02x %02x %02x\n", data[0], data[1], data[2], data[3], data[4]);
+                                LOG(" last data %02x %02x %02x %02x %02x\n", last_data[0], last_data[1], last_data[2], last_data[3], last_data[4]);
 
-                                if (memcmp(last_data+3, data+3, 2) != 0) {
+                                if (memcmp(last_data+3, data+3, 2) != 0 &&
+                                    (data[3] >=10 && data[3] <= 100) &&
+                                    (data[4] >=10 && data[4] <= 100)) {
                                         uint8_t value[128] =  {0};
                                         int cfd = create_client_sock(CLIENT);
-                                        snprintf(value, 127, "%s DATA %d;%d\n",
+                                        snprintf(value, 127, "%s DATA %d;%d",
                                                  buf+8, data[3], data[4]);
-                                        sock_send_cmd(cfd, SERVER, value, strlen(value));
+                                        sock_send_cmd(cfd, SERVER, value, strlen(value)+1);
                                         close(cfd);
                                 }
 
@@ -2165,12 +2173,12 @@ static void notify_cb(uint16_t value_handle, const uint8_t *value,
                                 data[k++] = value[i];
                         }
                         if (start_header1 == 1 && k == 17) {
-                                printf(" data      %02x %02x %02x %02x %02x %02x %02x\n", data1[0], data1[1], data1[2], data1[3], data1[4], data1[12], data1[13]);
+                                LOG(" data      %02x %02x %02x %02x %02x %02x %02x\n", data1[0], data1[1], data1[2], data1[3], data1[4], data1[12], data1[13]);
                                 uint8_t value[128] =  {0};
                                 int cfd = create_client_sock(CLIENT);
-                                snprintf(value, 127, "%s DATA %d;%d\n",
+                                snprintf(value, 127, "%s DATA %d;%d",
                                          buf+8, data1[12], data1[13]);
-                                sock_send_cmd(cfd, SERVER, value, strlen(value));
+                                sock_send_cmd(cfd, SERVER, value, strlen(value)+1);
                                 close(cfd);
 
                                 start_header1 = 0;
@@ -2196,27 +2204,30 @@ static void register_notify_cb(uint16_t att_ecode, void *user_data)
 		PRLOG("Failed to register notify handler "
 					"- error code: 0x%02x\n", att_ecode);
                 /* FIXME: XXX */
+                /*
                 unsigned int value1;
                 rand_r(&value1);
                 int cfd = create_client_sock(CLIENT);
-                snprintf(value, 127, "%s DATA %.2f\n",
+                snprintf(value, 127, "%s DATA %.2f",
                          buf+8, (value1%60 + 40)/10.0);
-                sock_send_cmd(cfd, SERVER, value, strlen(value));
+                sock_send_cmd(cfd, SERVER, value, strlen(value)+1);
                 close(cfd);
+                */
 		return;
 	}
 
 	PRLOG("Registered notify handler!");
 
         /* FIXME: XXX */
+        /*
         unsigned int value1;
         rand_r(&value1);
-        //uint8_t value[128] =  {0};
         int cfd = create_client_sock(CLIENT);
-        snprintf(value, 127, "%s DATA %.2f\n",
+        snprintf(value, 127, "%s DATA %.2f",
                  buf+8, (value1%60 + 40)/10.0);
-        sock_send_cmd(cfd, SERVER, value, strlen(value));
+        sock_send_cmd(cfd, SERVER, value, strlen(value)+1);
         close(cfd);
+        */
 }
 
 /**
@@ -2234,7 +2245,7 @@ static void cmd_register_notify(struct client *cli, char *cmd_str)
 	char *endptr = NULL;
 
 	if (!bt_gatt_client_is_ready(cli->gatt)) {
-		printf("GATT client not initialized\n");
+		LOG("GATT client not initialized\n");
 		return;
 	}
 
@@ -2245,7 +2256,7 @@ static void cmd_register_notify(struct client *cli, char *cmd_str)
 
 	value_handle = strtol(argv[0], &endptr, 0);
 	if (!endptr || *endptr != '\0' || !value_handle) {
-		printf("Invalid value handle: %s\n", argv[0]);
+		LOG("Invalid value handle: %s\n", argv[0]);
 		return;
 	}
 
@@ -2253,18 +2264,22 @@ static void cmd_register_notify(struct client *cli, char *cmd_str)
 							register_notify_cb,
 							notify_cb, NULL, NULL);
 	if (!id) {
-		printf("Failed to register notify handler\n");
+		LOG("Failed to register notify handler\n");
 
                 /* FIXME: XXX */
-                uint8_t value[128] =  {0};
-                unsigned int value1;
-                rand_r(&value1);
-                int cfd = create_client_sock(CLIENT);
-                snprintf(value, 127, "%s DATA %.2f\n",
-                         buf+8, (value1%60 + 40)/10.0);
-                sock_send_cmd(cfd, SERVER, value, strlen(value));
-                close(cfd);
-		return;
+                /*
+                if (match (cmd_str, "0x13")) {
+                    uint8_t value[128] =  {0};
+                    unsigned int value1;
+                    rand_r(&value1);
+                    int cfd = create_client_sock(CLIENT);
+                    snprintf(value, 127, "%s DATA %.2f;",
+                             buf+8, (value1%60 + 40)/10.0);
+                    sock_send_cmd(cfd, SERVER, value, strlen(value)+1);
+                    close(cfd);
+                    return;
+                }
+                */
 	}
 
 	PRLOG("Registering notify handler with id: %u\n", id);
@@ -2275,7 +2290,7 @@ static void cmd_register_notify(struct client *cli, char *cmd_str)
  */
 static void unregister_notify_usage(void)
 {
-	printf("Usage: unregister-notify <notify id>\n");
+	LOG("Usage: unregister-notify <notify id>\n");
 }
 
 /**
@@ -2292,7 +2307,7 @@ static void cmd_unregister_notify(struct client *cli, char *cmd_str)
 	char *endptr = NULL;
 
 	if (!bt_gatt_client_is_ready(cli->gatt)) {
-		printf("GATT client not initialized\n");
+		LOG("GATT client not initialized\n");
 		return;
 	}
 
@@ -2303,16 +2318,16 @@ static void cmd_unregister_notify(struct client *cli, char *cmd_str)
 
 	id = strtol(argv[0], &endptr, 0);
 	if (!endptr || *endptr != '\0' || !id) {
-		printf("Invalid notify id: %s\n", argv[0]);
+		LOG("Invalid notify id: %s\n", argv[0]);
 		return;
 	}
 
 	if (!bt_gatt_client_unregister_notify(cli->gatt, id)) {
-		printf("Failed to unregister notify handler with id: %u\n", id);
+		LOG("Failed to unregister notify handler with id: %u\n", id);
 		return;
 	}
 
-	printf("Unregistered notify handler with id: %u\n", id);
+	LOG("Unregistered notify handler with id: %u\n", id);
 }
 
 /**
@@ -2320,7 +2335,7 @@ static void cmd_unregister_notify(struct client *cli, char *cmd_str)
  */
 static void set_security_usage(void)
 {
-	printf("Usage: set_security <level>\n"
+	LOG("Usage: set_security <level>\n"
 		"level: 1-3\n"
 		"e.g.:\n"
 		"\tset-sec-level 2\n");
@@ -2341,12 +2356,12 @@ static void cmd_set_security(struct client *cli, char *cmd_str)
 	int level;
 
 	if (!bt_gatt_client_is_ready(cli->gatt)) {
-		printf("GATT client not initialized\n");
+		LOG("GATT client not initialized\n");
 		return;
 	}
 
 	if (!parse_args(cmd_str, 1, argv, &argc)) {
-		printf("Too many arguments\n");
+		LOG("Too many arguments\n");
 		set_security_usage();
 		return;
 	}
@@ -2358,14 +2373,14 @@ static void cmd_set_security(struct client *cli, char *cmd_str)
 
 	level = strtol(argv[0], &endptr, 0);
 	if (!endptr || *endptr != '\0' || level < 1 || level > 3) {
-		printf("Invalid level: %s\n", argv[0]);
+		LOG("Invalid level: %s\n", argv[0]);
 		return;
 	}
 
 	if (!bt_gatt_client_set_security(cli->gatt, level))
-		printf("Could not set sec level\n");
+		LOG("Could not set sec level\n");
 	else
-		printf("Setting security level %d success\n", level);
+		LOG("Setting security level %d success\n", level);
 }
 
 /**
@@ -2379,15 +2394,15 @@ static void cmd_get_security(struct client *cli, char *cmd_str)
 	int level;
 
 	if (!bt_gatt_client_is_ready(cli->gatt)) {
-		printf("GATT client not initialized\n");
+		LOG("GATT client not initialized\n");
 		return;
 	}
 
 	level = bt_gatt_client_get_security(cli->gatt);
 	if (level < 0)
-		printf("Could not set sec level\n");
+		LOG("Could not set sec level\n");
 	else
-		printf("Security level: %u\n", level);
+		LOG("Security level: %u\n", level);
 }
 
 /**
@@ -2402,7 +2417,7 @@ static bool convert_sign_key(char *optarg, uint8_t key[16])
 	int i;
 
 	if (strlen(optarg) != 32) {
-		printf("sign-key length is invalid\n");
+		LOG("sign-key length is invalid\n");
 		return false;
 	}
 
@@ -2419,7 +2434,7 @@ static bool convert_sign_key(char *optarg, uint8_t key[16])
  */
 static void set_sign_key_usage(void)
 {
-	printf("Usage: set-sign-key [options]\nOptions:\n"
+	LOG("Usage: set-sign-key [options]\nOptions:\n"
 		"\t -c, --sign-key <csrk>\tCSRK\n"
 		"e.g.:\n"
 		"\tset-sign-key -c D8515948451FEA320DC05A2E88308188\n");
@@ -2525,9 +2540,9 @@ static void cmd_help(struct client *cli, char *cmd_str)
 {
 	int i;
 
-	printf("Commands:\n");
+	LOG("Commands:\n");
 	for (i = 0; command[i].cmd; i++)
-		printf("\t%-15s\t%s\n", command[i].cmd, command[i].doc);
+		LOG("\t%-15s\t%s\n", command[i].cmd, command[i].doc);
 }
 
 /**
@@ -2568,12 +2583,12 @@ static void prompt_read_cb(int fd, uint32_t events, void *user_data)
         numBytes = recvfrom(fd, buf, 128, 0,
                             (struct sockaddr *) &claddr, &len);
         if (numBytes == -1)
-                printf("recvfrom");
+                LOG("recvfrom error\n");
 
-        printf("[Client] received %ld bytes from %s\n", (long) numBytes,
+        LOG("[Client] received %ld bytes from %s\n", (long) numBytes,
                claddr.sun_path);
 
-        printf("[Client] C-> S : %s\n", buf);
+        LOG("[Client] C-> S : %s\n", buf);
 
 
 	buf[numBytes] = '\0';
@@ -2642,7 +2657,7 @@ static int l2cap_le_att_connect(bdaddr_t *src, bdaddr_t *dst, uint8_t dst_type,
 		ba2str(src, srcaddr_str);
 		ba2str(dst, dstaddr_str);
 
-		printf("btgatt-client: Opening L2CAP LE connection on ATT "
+		LOG("btgatt-client: Opening L2CAP LE connection on ATT "
 					"channel:\n\t src: %s\n\tdest: %s\n",
 					srcaddr_str, dstaddr_str);
 	}
@@ -2683,7 +2698,7 @@ static int l2cap_le_att_connect(bdaddr_t *src, bdaddr_t *dst, uint8_t dst_type,
 	dstaddr.l2_bdaddr_type = dst_type;
 	bacpy(&dstaddr.l2_bdaddr, dst);
 
-	printf("Connecting to device...");
+	LOG("Connecting to device...");
 	fflush(stdout);
 
 	if (connect(sock, (struct sockaddr *) &dstaddr, sizeof(dstaddr)) < 0) {
@@ -2913,9 +2928,9 @@ static void child_handler(int sig)
                 printf("Close PID %d\n", pid);
                 close(cfd);
                 */
-                snprintf(cmd, 127, "CLOSEID %d\n", pid);
+                snprintf(cmd, 127, "CLOSEID %d", pid);
                 int cfd = create_client_sock(CLIENT);
-                sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+                sock_send_cmd(cfd, SERVER, cmd, strlen(cmd)+1);
                 LOG("Close PID %d\n", pid);
                 close(cfd);
         }
@@ -2943,21 +2958,21 @@ main(int argc, char *argv[])
 
         sfd = socket(AF_UNIX, SOCK_DGRAM, 0);       /* Create server socket */
         if (sfd == -1)
-                printf("socket");
+                LOG("socket create error.\n");
 
         /* Construct well-known address and bind server socket to it */
 
         /* For an explanation of the following check, see the erratum note for
            page 1168 at http://www.man7.org/tlpi/errata/. */
         if (remove(CLIENT) == -1 && errno != ENOENT)
-                printf("remove-%s error.\n", CLIENT);
+                LOG("remove-%s error.\n", CLIENT);
 
         memset(&svaddr, 0, sizeof(struct sockaddr_un));
         svaddr.sun_family = AF_UNIX;
         strncpy(svaddr.sun_path, CLIENT, sizeof(svaddr.sun_path) - 1);
 
         if (bind(sfd, (struct sockaddr *) &svaddr, sizeof(struct sockaddr_un)) == -1)
-                printf("bind");
+                LOG("bind error.\n");
 
         /* Receive messages */
         for (;;) {
@@ -2967,7 +2982,7 @@ main(int argc, char *argv[])
                 numBytes = recvfrom(sfd, buf, BUF_SIZE, 0,
                                     (struct sockaddr *) &claddr, &len);
                 if (numBytes == -1) {
-                        printf("recvfrom error, will retry \n");
+                        LOG("recvfrom error, will retry \n");
                         usleep(500000);
                         goto retry;
                 }
@@ -2980,17 +2995,17 @@ main(int argc, char *argv[])
                 pid_t pid = fork();
                 switch(pid) {
                 case -1:
-                        printf("Create process error %s\n", buf);
+                        LOG("Create process error %s\n", buf);
                         break;
                 case 0:
                 {
                         int cfd = create_client_sock(CLIENT);
                         /* create process sucess */
-                        printf("in child process %s pid %d\n", buf, getpid());
+                        LOG("in child process %s pid %d\n", buf, getpid());
 
                         char cmd[128] = {0};
-                        snprintf(cmd, 127, "%s PROCESS %d\n", buf+8, getpid());
-                        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+                        snprintf(cmd, 127, "%s PROCESS %d", buf+8, getpid());
+                        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd)+1);
 
                         if (strstr(buf, "type")) {
                                 struct sockaddr_rc loc_addr = { 0 };
@@ -3000,7 +3015,7 @@ main(int argc, char *argv[])
                                 int status;
                                 memcpy(address, buf+8, 17);
                                 if (str2ba(address, &dst_addr) < 0) {
-                                        fprintf(stderr, "Invalid remote address: %s\n", address);
+                                        LOG("Invalid remote address: %s\n", address);
                                         return EXIT_FAILURE;
                                 }
                                 s = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
@@ -3010,8 +3025,8 @@ main(int argc, char *argv[])
                                 bacpy(&loc_addr.rc_bdaddr, &dst_addr);
 				status = connect(s, (struct sockaddr *)&loc_addr, sizeof(loc_addr));
 				if (status < 0) {
-                                        snprintf(cmd, 127, "%s DISCONN fail\n", buf+8);
-                                        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+                                        snprintf(cmd, 127, "%s DISCONN fail", buf+8);
+                                        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd)+1);
                                         return EXIT_FAILURE;
                                 }
 
@@ -3042,9 +3057,9 @@ main(int argc, char *argv[])
                                                   56 => 86     AD(173) => x 4 / 30  = 23.0  91(145) => x 2 / 15 = 19.3
                                                 */
                                                 uint8_t data[128] =  {0};
-                                                snprintf(data, 127, "%s DATA %d;%.1f;%.1f\n",
+                                                snprintf(data, 127, "%s DATA %d;%.1f;%.1f",
                                                          address, buf[18], (buf[14] * 4)/30.0, (buf[16] * 2)/15.0);
-                                                sock_send_cmd(cfd, SERVER, data, strlen(data));
+                                                sock_send_cmd(cfd, SERVER, data, strlen(data)+1);
                                                 sleep(60);
                                                 close(s);
                                                 return;
@@ -3081,16 +3096,16 @@ main(int argc, char *argv[])
 
                                 fd = l2cap_le_att_connect(&src_addr, &dst_addr, dst_type, sec);
                                 if (fd < 0) {
-                                        snprintf(cmd, 127, "%s DISCONN fail >>>>>>>> \n", buf+8);
-                                        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+                                        snprintf(cmd, 127, "%s DISCONN fail >>>>>>>>", buf+8);
+                                        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd)+1);
                                         return EXIT_FAILURE;
                                 }
 
                                 cli = client_create(fd, mtu);
                                 if (!cli) {
                                         close(fd);
-                                        snprintf(cmd, 127, "%s DISCONN fail ========= \n", buf+8);
-                                        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd));
+                                        snprintf(cmd, 127, "%s DISCONN fail ========= ", buf+8);
+                                        sock_send_cmd(cfd, SERVER, cmd, strlen(cmd)+1);
                                         return EXIT_FAILURE;
                                 }
 
