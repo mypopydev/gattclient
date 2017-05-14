@@ -2143,7 +2143,7 @@ static void notify_cb(uint16_t value_handle, const uint8_t *value,
                         if (start_header == 0)
                                 continue;
                 }
-        } else if (value_handle == 0x13) {
+        } else if (value_handle == 0x12) {
                   for (i = 0; i < length; i++) {
                         if (value[i] == 0x03)  {/* find the start header */
                                 start_header1 = 1;
@@ -2151,14 +2151,18 @@ static void notify_cb(uint16_t value_handle, const uint8_t *value,
                                 data1[k++] = value[i];
                         }
                         if (start_header1 == 1 && k <= 16 && k > 0 && value[i] != 0x03) {
-                                data[k++] = value[i];
+                                data1[k++] = value[i];
                         }
                         if (start_header1 == 1 && k == 17) {
                                 LOG(" data      %02x %02x %02x %02x %02x %02x %02x\n", data1[0], data1[1], data1[2], data1[3], data1[4], data1[12], data1[13]);
                                 uint8_t value[128] =  {0};
                                 int cfd = create_client_sock(CLIENT);
+                                /*
                                 snprintf(value, 127, "%s DATA %d;%d",
                                          buf+8, data1[12], data1[13]);
+                                */
+                                snprintf(value, 127, "%s DATA %.1f;",
+                                         buf+8, (data1[12] * 6 - 24)/100.0);
                                 sock_send_cmd(cfd, SERVER, value, strlen(value)+1);
                                 close(cfd);
 
