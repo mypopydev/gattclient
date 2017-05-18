@@ -3082,10 +3082,13 @@ main(int argc, char *argv[])
                                 char address[18] = {0};
                                 memcpy(address, buf+8, 17);
                                 char cmd[1024] = {0};
-                                snprintf(cmd, 1023, "python /home/media/Study/bluez-dev/client/bt601.py %s", address);
+                                snprintf(cmd, 1023, "python /root/bt601.py %s", address);
                                 LOG ("601B send cmd %s\n", cmd);
                                 system(cmd);
-                                sleep(10);
+                                //LOG ("601B send cmd %s ====> \n", cmd);
+                                //sleep(10);
+                                LOG ("601B send cmd %s return \n", cmd);
+                                return;
                         } else {
                                 int sec = BT_SECURITY_LOW;
                                 uint16_t mtu = 0;
