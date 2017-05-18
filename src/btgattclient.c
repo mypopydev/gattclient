@@ -3086,7 +3086,7 @@ main(int argc, char *argv[])
                                 LOG ("601B send cmd %s\n", cmd);
                                 system(cmd);
                                 //LOG ("601B send cmd %s ====> \n", cmd);
-                                //sleep(10);
+                                sleep(30);
                                 LOG ("601B send cmd %s return \n", cmd);
                                 return;
                         } else {
